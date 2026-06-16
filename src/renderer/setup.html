@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="title">TS Activity Keeper — Sign in</span>
+        </div>
+        <div class="setup-hint">Enter your TS account credentials. They are stored in the macOS Keychain and used automatically.</div>
+        <div class="divider"></div>
+        <label class="field-label">Email / login</label>
+        <input class="text-input" id="email" type="text" autocomplete="off" placeholder="you@example.com">
+        <label class="field-label">Password</label>
+        <input class="text-input" id="password" type="password" autocomplete="off" placeholder="••••••••">
+        <button id="saveBtn" class="btn btn-start">Save and start</button>
+        <div id="error" class="setup-error"></div>
+    </div>
+    <script src="setup.js"></script>
+</body>
+</html>

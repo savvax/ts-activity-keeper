@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="status-dot" id="statusDot"></span>
+            <span class="title">TS Activity Keeper</span>
+        </div>
+        <div class="divider"></div>
+        <div class="info-row">
+            <span class="label">Status:</span>
+            <span class="value" id="status">Stopped</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Session:</span>
+            <span class="value mono" id="duration">00:00:00</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Today:</span>
+            <span class="value mono" id="today">--:--:--</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Week:</span>
+            <span class="value mono" id="week">--:--:--</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Login:</span>
+            <span class="value small" id="email">-</span>
+        </div>
+        <div class="info-row">
+            <span class="label">Action:</span>
+            <span class="value small" id="action">-</span>
+        </div>
+        <div class="challenge hidden" id="challenge">⚠️ Verification required (captcha)</div>
+        <div class="divider"></div>
+        <button id="mainBtn" class="btn btn-start">Start</button>
+        <button id="dashboardBtn" class="btn btn-secondary">Show dashboard</button>
+        <div class="divider"></div>
+        <div class="info-row">
+            <span class="label">Mode:</span>
+            <span class="value">
+                <select id="modeSelect">
+                    <option value="api">API</option>
+                    <option value="window">Browser window</option>
+                    <option value="background">Background (hidden window)</option>
+                </select>
+            </span>
+        </div>
+        <label class="toggle-label">
+            <input type="checkbox" id="soundToggle">
+            Notification sound
+        </label>
+        <div class="info-row">
+            <span class="label">Remind every</span>
+            <span class="value">
+                <input type="number" id="reminderMinutes" min="1" max="120" style="width:48px"> min
+            </span>
+        </div>
+        <button id="loginBtn" class="btn btn-start">Sign in</button>
+        <button id="logoutBtn" class="btn btn-secondary">Sign out</button>
+        <button id="quitBtn" class="btn btn-quit">Quit app</button>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>
