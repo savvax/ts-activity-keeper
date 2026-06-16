@@ -64,13 +64,13 @@ npm run build
 The installer is written to `dist/`:
 
 ```
-dist/TS Activity Keeper-3.0.0-arm64.dmg
+dist/TS Activity Keeper-0.0.1-arm64.dmg
 ```
 
 The app icon is read from `build/icon.icns`. To open the result:
 
 ```bash
-open "dist/TS Activity Keeper-3.0.0-arm64.dmg"
+open "dist/TS Activity Keeper-0.0.1-arm64.dmg"
 ```
 
 Then drag **TS Activity Keeper** into Applications.
