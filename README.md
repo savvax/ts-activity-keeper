@@ -64,17 +64,38 @@ npm run build
 The installer is written to `dist/`:
 
 ```
-dist/TS Activity Keeper-0.0.1-arm64.dmg
+dist/TS Activity Keeper-0.0.2-arm64.dmg
 ```
 
 The app icon is read from `build/icon.icns`. To open the result:
 
 ```bash
-open "dist/TS Activity Keeper-0.0.1-arm64.dmg"
+open "dist/TS Activity Keeper-0.0.2-arm64.dmg"
 ```
 
 Then drag **TS Activity Keeper** into Applications.
 
-> Note: builds are unsigned by default. On first launch macOS Gatekeeper may block the app —
-> right-click the app and choose **Open**, or allow it under
-> *System Settings → Privacy & Security*.
+The build is **ad-hoc code-signed** automatically via the `build/afterPack.js` hook. This
+replaces Electron's weak linker-generated signature with a full deep signature, which prevents
+the misleading *"the app is damaged and can't be opened"* Gatekeeper error.
+
+## Installing a downloaded build
+
+The app is ad-hoc signed but **not notarized**, so when you download the `.dmg` from GitHub
+macOS adds a quarantine attribute. On the **first launch** Gatekeeper will still warn you. To
+open it:
+
+1. Open the `.dmg` and drag **TS Activity Keeper** into **Applications**.
+2. **Right-click** the app in Applications and choose **Open**, then confirm **Open** in the dialog.
+   - On recent macOS (Sequoia and later), instead open it once, then go to
+     **System Settings → Privacy & Security** and click **Open Anyway**.
+3. After the first successful launch, the app opens normally every time.
+
+Alternatively, remove the quarantine flag from the terminal:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/TS Activity Keeper.app"
+```
+
+> To remove the Gatekeeper prompt entirely, the app would need a Developer ID signature and
+> Apple notarization (requires a paid Apple Developer account).
