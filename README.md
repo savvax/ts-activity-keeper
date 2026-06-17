@@ -87,9 +87,22 @@ open it:
 
 1. Open the `.dmg` and drag **TS Activity Keeper** into **Applications**.
 2. **Right-click** the app in Applications and choose **Open**, then confirm **Open** in the dialog.
-   - On recent macOS (Sequoia and later), instead open it once, then go to
-     **System Settings → Privacy & Security** and click **Open Anyway**.
 3. After the first successful launch, the app opens normally every time.
+
+### macOS Sequoia (15) and later
+
+On Sequoia the right-click → Open shortcut no longer bypasses Gatekeeper. Instead you'll see:
+
+> **"Apple could not verify "TS Activity Keeper.app" is free of malware that may harm your Mac
+> or compromise your privacy."**
+
+This is expected for an un-notarized app — it is **not** an actual malware detection. To open it:
+
+1. Double-click the app, then click **Done** on the warning (do **not** click *Move to Trash*).
+2. Open **System Settings → Privacy & Security** and scroll down to the **Security** section.
+3. Next to *"TS Activity Keeper" was blocked…* click **Open Anyway**.
+4. Authenticate with Touch ID / your password, then click **Open Anyway** again in the dialog.
+5. After this one-time approval, the app launches normally on every subsequent open.
 
 Alternatively, remove the quarantine flag from the terminal:
 
