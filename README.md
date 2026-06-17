@@ -5,6 +5,23 @@ A macOS menu-bar (Electron) app that keeps your dashboard session active and rep
 The app lives in the menu bar. Click the tray icon to open the control panel, sign in, and pick a
 tracking mode.
 
+## Quick start — build from source
+
+Build the signed `.dmg` yourself in a few commands (macOS, Apple Silicon):
+
+```bash
+git clone https://github.com/savvax/ts-activity-keeper.git
+cd ts-activity-keeper
+npm install
+npm run build
+cd dist
+open "TS Activity Keeper-0.0.2-arm64.dmg"
+```
+
+Then drag **TS Activity Keeper** into **Applications**. The build is ad-hoc signed automatically,
+so it won't show the *"app is damaged"* error. On first launch see
+[Installing a downloaded build](#installing-a-downloaded-build) for the Gatekeeper approval step.
+
 ## Features
 
 - Menu-bar app with a live tray clock icon
