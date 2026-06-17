@@ -1,14 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { DEFAULTS, withDefaults, sanitize, VALID_MODES } = require('../src/settings');
+const { DEFAULTS, withDefaults, sanitize } = require('../src/settings');
 
-test('DEFAULTS are reminder=5, sound=true, mode=api', () => {
-  assert.deepStrictEqual(DEFAULTS, { notifyReminderMinutes: 5, notifySound: true, mode: 'api' });
+test('DEFAULTS are reminder=5, sound=true (no mode)', () => {
+  assert.deepStrictEqual(DEFAULTS, { notifyReminderMinutes: 5, notifySound: true });
 });
 
 test('withDefaults fills missing keys', () => {
-  assert.deepStrictEqual(withDefaults({}), { notifyReminderMinutes: 5, notifySound: true, mode: 'api' });
-  assert.deepStrictEqual(withDefaults({ notifyReminderMinutes: 9 }), { notifyReminderMinutes: 9, notifySound: true, mode: 'api' });
+  assert.deepStrictEqual(withDefaults({}), { notifyReminderMinutes: 5, notifySound: true });
+  assert.deepStrictEqual(withDefaults({ notifyReminderMinutes: 9 }), { notifyReminderMinutes: 9, notifySound: true });
   assert.strictEqual(withDefaults({ notifySound: false }).notifySound, false);
 });
 
@@ -20,20 +20,11 @@ test('sanitize clamps minutes to >=1 integer and coerces sound to bool', () => {
   assert.deepStrictEqual(sanitize({}), {});
 });
 
-test('DEFAULTS include mode=api', () => {
-  assert.strictEqual(DEFAULTS.mode, 'api');
-});
-
-test('withDefaults fills and validates mode', () => {
-  assert.strictEqual(withDefaults({}).mode, 'api');
-  assert.strictEqual(withDefaults({ mode: 'api' }).mode, 'api');
-  assert.strictEqual(withDefaults({ mode: 'background' }).mode, 'background');
-  assert.strictEqual(withDefaults({ mode: 'bogus' }).mode, 'api');
-});
-
-test('sanitize validates mode and drops unknown', () => {
-  assert.deepStrictEqual(sanitize({ mode: 'api' }), { mode: 'api' });
-  assert.deepStrictEqual(sanitize({ mode: 'nope' }), { mode: 'api' });
-  assert.deepStrictEqual(sanitize({}), {});
-  assert.deepStrictEqual(VALID_MODES, ['window', 'background', 'api']);
+test('mode is no longer part of the settings surface (API-only)', () => {
+  // Legacy configs carrying a mode load without error; the key is ignored.
+  assert.strictEqual('mode' in withDefaults({ mode: 'window' }), false);
+  assert.strictEqual('mode' in withDefaults({ mode: 'background' }), false);
+  assert.strictEqual(DEFAULTS.mode, undefined);
+  // A mode in a save patch is dropped, never persisted.
+  assert.deepStrictEqual(sanitize({ mode: 'window' }), {});
 });

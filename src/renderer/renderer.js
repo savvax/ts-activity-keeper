@@ -30,9 +30,6 @@ function updateUI(s) {
     $('mainBtn').style.display = loggedIn ? '' : 'none';
     $('logoutBtn').style.display = loggedIn ? '' : 'none';
     $('loginBtn').style.display = loggedIn ? 'none' : '';
-
-    $('modeSelect').value = s.mode || 'api';
-    $('dashboardBtn').style.display = s.mode === 'api' ? 'none' : '';
 }
 
 function statusColor(s) {
@@ -44,8 +41,6 @@ function statusColor(s) {
     return '#ff9500';
 }
 
-$('dashboardBtn').onclick = () => window.electronAPI.showDashboard();
-$('modeSelect').onchange = (e) => window.electronAPI.setMode(e.target.value);
 $('quitBtn').onclick = () => window.electronAPI.quit();
 $('logoutBtn').onclick = () => window.electronAPI.logout();
 $('loginBtn').onclick = () => window.electronAPI.showLogin();

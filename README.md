@@ -2,8 +2,8 @@
 
 A macOS menu-bar (Electron) app that keeps your dashboard session active and reports tracked time.
 
-The app lives in the menu bar. Click the tray icon to open the control panel, sign in, and pick a
-tracking mode.
+The app lives in the menu bar. Click the tray icon to open the control panel, sign in, and start
+tracking.
 
 ## Quick start — build from source
 
@@ -15,7 +15,7 @@ cd ts-activity-keeper
 npm install
 npm run build
 cd dist
-open "TS Activity Keeper-0.0.2-arm64.dmg"
+open "TS Activity Keeper-0.0.3-arm64.dmg"
 ```
 
 Then drag **TS Activity Keeper** into **Applications**. The build is ad-hoc signed automatically,
@@ -26,11 +26,7 @@ so it won't show the *"app is damaged"* error. On first launch see
 
 - Menu-bar app with a live tray clock icon
 - Sign-in via Gitea OAuth; credentials are stored **encrypted in the macOS Keychain** (never in plaintext)
-- Three tracking modes:
-  - **window** — visible browser window
-  - **background** — hidden window
-  - **api** — headless HTTP heartbeats, no browser window
-- Activity emulation: mouse movement, scrolling, safe clicks, periodic page refresh
+- Headless **API tracking** — replays the Gitea OAuth flow and sends tracking heartbeats over HTTP, with no browser window
 - Tracking-health monitoring (counting / stalled / disconnected states)
 - Session persistence (cookies survive restarts)
 
@@ -49,9 +45,8 @@ npm install
 No `.env` file is required. Credentials are entered in the app's sign-in window on first launch and
 stored in the macOS Keychain.
 
-> Optional overrides via environment variables (both have sensible defaults):
+> Optional override via environment variable:
 > - `DASHBOARD_URL` — dashboard base URL (has a built-in default)
-> - `HEADLESS` — `true` to start in background mode
 
 ## Running
 
@@ -81,13 +76,13 @@ npm run build
 The installer is written to `dist/`:
 
 ```
-dist/TS Activity Keeper-0.0.2-arm64.dmg
+dist/TS Activity Keeper-0.0.3-arm64.dmg
 ```
 
 The app icon is read from `build/icon.icns`. To open the result:
 
 ```bash
-open "dist/TS Activity Keeper-0.0.2-arm64.dmg"
+open "dist/TS Activity Keeper-0.0.3-arm64.dmg"
 ```
 
 Then drag **TS Activity Keeper** into Applications.

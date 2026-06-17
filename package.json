@@ -1,6 +1,6 @@
 {
   "name": "ts-activity-keeper",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "TS Activity Keeper for TS Dashboard — Electron macOS app",
   "main": "src/main.js",
   "scripts": {
