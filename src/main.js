@@ -1,12 +1,15 @@
-const { app, BrowserWindow, Tray, nativeImage, ipcMain, Notification, dialog } = require('electron');
+const { app, BrowserWindow, Tray, nativeImage, nativeTheme, ipcMain, Notification, dialog } = require('electron');
 const path = require('path');
 const zlib = require('zlib');
-const { randomInt, formatDuration, formatSeconds } = require('./utils');
+const axios = require('axios');
+const { randomInt, formatDuration, formatSeconds, maskLogin } = require('./utils');
 const credentials = require('./credentials');
 const { renderTrayClock, STATUS_COLORS } = require('./tray-icon');
 const { HEALTH, initialHealthState, deriveHealth } = require('./tracking-health');
 const { createSessionClock } = require('./session-clock');
 const { createNotifier } = require('./notifier');
+const { createAutoStop } = require('./auto-stop');
+const { createTelegramBot } = require('./telegram-bot');
 const settingsStore = require('./settings');
 const { createApiTracker } = require('./api-tracker');
 const { DEFAULT_DASHBOARD_URL } = require('./endpoints');
@@ -30,7 +33,9 @@ let isQuitting = false;
 
 let healthState = initialHealthState();
 let notifier = null;
+let telegramBot = null;
 const sessionClock = createSessionClock(() => Date.now());
+const autoStop = createAutoStop(() => Date.now());
 
 const MAX_RECOVERY_ATTEMPTS = 5;
 
@@ -46,7 +51,15 @@ let state = {
     today: '--:--:--',
     week: '--:--:--',
     challenge: false,
+    autoStopRemaining: null, // 'HH:MM:SS' while an auto-stop is armed
+    telegramLinked: false,
 };
+
+// The raw login never leaves main: everything user-facing goes through here.
+function displayEmail() {
+    if (!config.email) return '';
+    return settingsStore.loadSettings().hideLogin ? maskLogin(config.email) : config.email;
+}
 
 function updateState(key, value) {
     state[key] = value;
@@ -145,13 +158,13 @@ function showControlWindow() {
     if (!controlWindow || controlWindow.isDestroyed()) {
         controlWindow = new BrowserWindow({
             width: 320,
-            height: 460,
+            height: 500,
             show: false,
             frame: false,
             resizable: false,
             alwaysOnTop: true,
             skipTaskbar: true,
-            backgroundColor: '#ffffff',
+            backgroundColor: nativeTheme.shouldUseDarkColors ? '#131316' : '#f5f4f0',
             webPreferences: {
                 preload: path.join(__dirname, 'preload.js'),
                 contextIsolation: true,
@@ -194,6 +207,7 @@ async function startBot() {
     healthState = initialHealthState();
     sessionClock.reset();
     if (notifier) notifier.stop();
+    armAutoStop();
     startDurationTimer();
     updateState('status', 'Starting...');
 
@@ -206,6 +220,8 @@ async function startBot() {
             updateState('action', 'Authorization failed');
             running = false;
             stopDurationTimer();
+            autoStop.disarm();
+            updateState('autoStopRemaining', null);
             return;
         }
         updateState('status', 'Active');
@@ -215,6 +231,9 @@ async function startBot() {
         updateState('status', 'Error');
         updateState('action', e.message);
         running = false;
+        stopDurationTimer();
+        autoStop.disarm();
+        updateState('autoStopRemaining', null);
     }
 }
 
@@ -223,6 +242,8 @@ async function stopBot() {
     clearTimeout(heartbeatTimer);
     stopDurationTimer();
     if (notifier) notifier.stop();
+    autoStop.disarm();
+    updateState('autoStopRemaining', null);
     sessionClock.reset();
     healthState = initialHealthState();
 
@@ -254,19 +275,20 @@ function processHealth(event) {
 }
 
 function applyHealth(next) {
-    const settings = settingsStore.loadSettings();
     if (next.health === HEALTH.COUNTING) {
         sessionClock.resume();
         updateState('status', 'Active');
         if (!trackingState.challengePending) updateState('action', 'Tracking active');
-        if (notifier) notifier.restored(settings);
+        if (notifier) notifier.restored();
+        telegramNotify('✅ Time is being counted.');
     } else {
         // stalled, disconnected, or connecting-that-resolved-to-not-counting
         sessionClock.pause();
         updateState('status', 'Not counting');
         const msg = next.health === HEALTH.STALLED ? 'Not counting (offline)' : 'No server connection';
         updateState('action', msg);
-        if (notifier) notifier.notCounting(msg, settings);
+        if (notifier) notifier.notCounting(msg);
+        telegramNotify('⚠️ Time is NOT being counted: ' + msg);
     }
 }
 
@@ -351,8 +373,90 @@ async function heartbeatLoop() {
 function startDurationTimer() {
     stopDurationTimer();
     durationTimer = setInterval(() => {
+        state.autoStopRemaining = autoStop.isArmed() ? formatDuration(autoStop.remainingMs()) : null;
         updateState('duration', formatDuration(sessionClock.elapsedMs()));
+        if (autoStop.expired()) onAutoStopExpired();
     }, 1000);
+}
+
+// ---- Auto-stop timer -------------------------------------------------------
+
+function armAutoStop() {
+    const settings = settingsStore.loadSettings();
+    autoStop.arm(settings.autoStopMinutes * 60 * 1000);
+    state.autoStopRemaining = autoStop.isArmed() ? formatDuration(autoStop.remainingMs()) : null;
+}
+
+async function onAutoStopExpired() {
+    autoStop.disarm();
+    const settings = settingsStore.loadSettings();
+    const andLogout = settings.autoStopLogout;
+    const msg = andLogout
+        ? 'Auto-stop timer fired — tracking stopped and you were logged out.'
+        : 'Auto-stop timer fired — tracking stopped.';
+    if (notifier) notifier.info(msg);
+    telegramNotify('⏱ ' + msg);
+    if (andLogout) await logout();
+    else await stopBot();
+}
+
+// ---- Telegram remote control -----------------------------------------------
+
+function telegramNotify(text) {
+    if (telegramBot) telegramBot.notify(text);
+}
+
+function telegramStatusText() {
+    const s = settingsStore.loadSettings();
+    const lines = [
+        `Status: ${state.status}`,
+        `Action: ${state.action}`,
+        `Activity (session): ${state.duration}`,
+        `Today: ${state.today}`,
+        `Week: ${state.week}`,
+        `Login: ${displayEmail() || '-'}`,
+    ];
+    if (state.autoStopRemaining) {
+        lines.push(`Auto-stop in: ${state.autoStopRemaining}${s.autoStopLogout ? ' (then logout)' : ''}`);
+    }
+    if (state.challenge) lines.push('⚠️ Captcha verification pending');
+    return lines.join('\n');
+}
+
+function syncTelegram() {
+    const settings = settingsStore.loadSettings();
+    updateState('telegramLinked', !!(settings.telegramToken && settings.telegramChatId));
+    if (!telegramBot) return;
+    if (settings.telegramToken) {
+        if (!telegramBot.isRunning()) telegramBot.start(); // floating long-poll loop
+    } else {
+        telegramBot.stop();
+    }
+}
+
+function createTelegram() {
+    telegramBot = createTelegramBot({
+        request: (cfg) => axios(cfg),
+        getToken: () => settingsStore.loadSettings().telegramToken,
+        getChatId: () => settingsStore.loadSettings().telegramChatId,
+        bindChatId: (chatId) => {
+            settingsStore.saveSettings({ telegramChatId: chatId });
+            updateState('telegramLinked', true);
+        },
+        handlers: {
+            status: async () => telegramStatusText(),
+            pause: () => stopBot(),
+            resume: async () => { startBot(); },
+            logout: () => logout(),
+            quit: async () => { app.isQuitting = true; app.quit(); },
+            revoke: async () => {
+                settingsStore.saveSettings({ telegramToken: '', telegramChatId: '' });
+                updateState('telegramLinked', false);
+            },
+        },
+        log: (msg) => console.error('[TELEGRAM]', msg),
+    });
+    syncTelegram();
 }
 
 function stopDurationTimer() {
@@ -372,7 +476,7 @@ ipcMain.handle('logout', async () => {
         buttons: ['Cancel', 'Log out'],
         defaultId: 1,
         cancelId: 0,
-        message: `Log out of ${config.email || ''}?`,
+        message: `Log out of ${displayEmail() || 'the current account'}?`,
         detail: 'Tracking will stop; you will need to sign in again.',
     });
     if (response === 1) await logout();
@@ -380,7 +484,13 @@ ipcMain.handle('logout', async () => {
 });
 ipcMain.on('show-login', () => showSetupWindow());
 ipcMain.handle('get-settings', () => settingsStore.loadSettings());
-ipcMain.handle('save-settings', (_, patch) => settingsStore.saveSettings(patch));
+ipcMain.handle('save-settings', (_, patch) => {
+    const saved = settingsStore.saveSettings(patch);
+    if (running) armAutoStop(); // new duration applies immediately
+    updateState('email', displayEmail());
+    syncTelegram();
+    return saved;
+});
 
 let setupWindow = null;
 let started = false;
@@ -391,7 +501,7 @@ ipcMain.handle('save-credentials', async (_, email, password) => {
         credentials.save(email, password);
         config.email = email;
         config.password = password;
-        state.email = email;
+        state.email = displayEmail();
         if (setupWindow && !setupWindow.isDestroyed()) setupWindow.close();
         if (!started) {
             started = true;
@@ -419,7 +529,7 @@ function showSetupWindow() {
         resizable: false,
         minimizable: false,
         maximizable: false,
-        backgroundColor: '#ffffff',
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#131316' : '#f5f4f0',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -467,7 +577,7 @@ function resolveCredentials() {
     const saved = credentials.loadSaved();
     config.email = saved.email;
     config.password = saved.password;
-    state.email = config.email || '';
+    state.email = displayEmail();
     return !!(config.email && config.password);
 }
 
@@ -476,7 +586,9 @@ app.whenReady().then(() => {
         createNotification: (opts) => new Notification(opts),
         setInterval: (fn, ms) => setInterval(fn, ms),
         clearInterval: (id) => clearInterval(id),
+        getSettings: () => settingsStore.loadSettings(),
     });
+    createTelegram();
     if (app.dock) app.dock.hide();
     if (resolveCredentials()) {
         started = true;
@@ -491,6 +603,7 @@ app.on('window-all-closed', (e) => {
 });
 
 app.on('before-quit', (e) => {
+    if (telegramBot) telegramBot.stop();
     if (isQuitting) return;
     if (running) {
         isQuitting = true;

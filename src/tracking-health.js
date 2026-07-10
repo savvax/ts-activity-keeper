@@ -32,9 +32,11 @@ function deriveHealth(prev, event) {
     const today = typeof event.today === 'number' ? event.today : null;
 
     if (s.windowBaseline == null && today != null) {
+        // First sample only establishes the reference point. Health stays as-is
+        // (connecting) until growth is actually observed — otherwise the session
+        // clock credits ~3 heartbeats of time the server never counted.
         s.windowBaseline = today;
         s.stallStrikes = 0;
-        s.health = HEALTH.COUNTING;
         return s;
     }
 

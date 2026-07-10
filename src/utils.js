@@ -42,11 +42,24 @@ function generateFingerprint(deviceId) {
         .digest('hex');
 }
 
+// Privacy mask for the account login: keeps the first two characters of the
+// local part and the first character of the domain ("jd•••@g•••").
+function maskLogin(login) {
+    if (!login) return '';
+    const at = login.indexOf('@');
+    const local = at >= 0 ? login.slice(0, at) : login;
+    const domain = at >= 0 ? login.slice(at + 1) : '';
+    const head = local.slice(0, Math.min(2, Math.max(1, local.length - 1)));
+    const masked = `${head}•••`;
+    return domain ? `${masked}@${domain.slice(0, 1)}•••` : masked;
+}
+
 module.exports = {
     randomDelay,
     randomInt,
     randomFloat,
     formatDuration,
     formatSeconds,
-    generateFingerprint
+    generateFingerprint,
+    maskLogin
 };

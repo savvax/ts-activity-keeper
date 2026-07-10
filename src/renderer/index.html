@@ -8,51 +8,89 @@
 <body>
     <div class="container">
         <div class="header">
-            <span class="status-dot" id="statusDot"></span>
-            <span class="title">TS Activity Keeper</span>
+            <span class="title">TS&nbsp;Activity&nbsp;Keeper</span>
+            <span class="pill" id="statusPill"><span class="pill-dot" id="statusDot"></span><span id="status">Stopped</span></span>
         </div>
-        <div class="divider"></div>
-        <div class="info-row">
-            <span class="label">Status:</span>
-            <span class="value" id="status">Stopped</span>
+
+        <div class="hero" id="hero">
+            <div class="hero-label">Activity</div>
+            <div class="hero-timer" id="duration">00:00:00</div>
+            <div class="hero-sub" id="action">-</div>
         </div>
-        <div class="info-row">
-            <span class="label">Session:</span>
-            <span class="value mono" id="duration">00:00:00</span>
+
+        <div class="autostop hidden" id="autoStopRow">
+            ⏱ Auto-stop in <span class="mono" id="autoStopRemaining">--:--:--</span><span id="autoStopMode"></span>
         </div>
-        <div class="info-row">
-            <span class="label">Today:</span>
-            <span class="value mono" id="today">--:--:--</span>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Today</div>
+                <div class="stat-value mono" id="today">--:--:--</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Week</div>
+                <div class="stat-value mono" id="week">--:--:--</div>
+            </div>
         </div>
-        <div class="info-row">
-            <span class="label">Week:</span>
-            <span class="value mono" id="week">--:--:--</span>
+
+        <div class="meta-row">
+            <span class="meta-label">Login</span>
+            <span class="meta-value" id="email">-</span>
         </div>
-        <div class="info-row">
-            <span class="label">Login:</span>
-            <span class="value small" id="email">-</span>
-        </div>
-        <div class="info-row">
-            <span class="label">Action:</span>
-            <span class="value small" id="action">-</span>
-        </div>
+
         <div class="challenge hidden" id="challenge">⚠️ Verification required (captcha)</div>
-        <div class="divider"></div>
+
         <button id="mainBtn" class="btn btn-start">Start</button>
-        <div class="divider"></div>
-        <label class="toggle-label">
-            <input type="checkbox" id="soundToggle">
-            Notification sound
-        </label>
-        <div class="info-row">
-            <span class="label">Remind every</span>
-            <span class="value">
-                <input type="number" id="reminderMinutes" min="1" max="120" style="width:48px"> min
-            </span>
+
+        <details class="settings">
+            <summary>Settings</summary>
+
+            <div class="setting-group">
+                <div class="group-title">Notifications</div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="soundToggle">
+                    Notification sound
+                </label>
+                <div class="setting-row">
+                    <span>Remind every</span>
+                    <span><input type="number" class="num-input" id="reminderMinutes" min="1" max="120"> min</span>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <div class="group-title">Privacy</div>
+                <label class="toggle-label" id="hideLoginRow">
+                    <input type="checkbox" id="hideLoginToggle">
+                    Hide login
+                </label>
+                <div class="hint" id="hideLoginHint">Permanent: once hidden, the login cannot be revealed again.</div>
+            </div>
+
+            <div class="setting-group">
+                <div class="group-title">Auto-stop timer</div>
+                <div class="setting-row">
+                    <span>Stop after</span>
+                    <span><input type="number" class="num-input" id="autoStopMinutes" min="0" max="1440"> min</span>
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="autoStopLogout">
+                    Also log out when it fires
+                </label>
+                <div class="hint">0 = disabled. Applies immediately, also to a running session.</div>
+            </div>
+
+            <div class="setting-group">
+                <div class="group-title">Telegram remote control <span class="link-dot" id="tgDot"></span></div>
+                <input type="password" class="text-input" id="telegramToken" placeholder="Bot token from @BotFather" autocomplete="off">
+                <div class="hint" id="tgHint">Paste a bot token, then send /start to your bot to link it. Clear the field (or send /revoke) to disconnect.</div>
+            </div>
+        </details>
+
+        <div class="footer">
+            <button id="loginBtn" class="btn btn-secondary">Sign in</button>
+            <button id="logoutBtn" class="btn btn-secondary">Sign out</button>
+            <button id="quitBtn" class="btn btn-quit">Quit app</button>
         </div>
-        <button id="loginBtn" class="btn btn-start">Sign in</button>
-        <button id="logoutBtn" class="btn btn-secondary">Sign out</button>
-        <button id="quitBtn" class="btn btn-quit">Quit app</button>
     </div>
     <script src="renderer.js"></script>
 </body>

@@ -9,13 +9,13 @@ function run(events, state) {
   return state;
 }
 
-test('first ok heartbeat with today sets baseline and counts', () => {
+test('first ok heartbeat with today sets baseline but does NOT count yet', () => {
   const s = deriveHealth(initialHealthState(), { hbOk: true, today: 100 });
-  assert.strictEqual(s.health, HEALTH.COUNTING);
+  assert.strictEqual(s.health, HEALTH.CONNECTING);
   assert.strictEqual(s.windowBaseline, 100);
 });
 
-test('growth beyond tolerance stays counting and advances baseline', () => {
+test('counting starts only once growth beyond tolerance is observed', () => {
   const s = run([{ hbOk: true, today: 100 }, { hbOk: true, today: 120 }]);
   assert.strictEqual(s.health, HEALTH.COUNTING);
   assert.strictEqual(s.windowBaseline, 120);
@@ -34,7 +34,7 @@ test('three flat heartbeats become stalled', () => {
 test('growth within tolerance (<=2s) counts as no growth', () => {
   const s = run([{ hbOk: true, today: 100 }, { hbOk: true, today: 102 }]);
   assert.strictEqual(s.stallStrikes, 1);
-  assert.strictEqual(s.health, HEALTH.COUNTING); // not yet 3 strikes
+  assert.strictEqual(s.health, HEALTH.CONNECTING); // never counted, not yet 3 strikes
 });
 
 test('ok heartbeats without a today value go connecting -> stalled', () => {
@@ -51,8 +51,8 @@ test('two failures become disconnected', () => {
   assert.strictEqual(s.health, HEALTH.DISCONNECTED);
 });
 
-test('single failure does not flip yet', () => {
-  const s = run([{ hbOk: true, today: 100 }, { hbOk: false, today: null }]);
+test('single failure does not flip a counting session yet', () => {
+  const s = run([{ hbOk: true, today: 100 }, { hbOk: true, today: 120 }, { hbOk: false, today: null }]);
   assert.strictEqual(s.health, HEALTH.COUNTING);
   assert.strictEqual(s.failStrikes, 1);
 });
