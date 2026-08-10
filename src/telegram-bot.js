@@ -1,28 +1,38 @@
-// Telegram remote control: long-polls getUpdates and dispatches commands to
-// injected handlers. No Electron deps — `request` (axios in production), the
-// token/chat-id accessors and the command handlers are all injected, so the
-// module is unit-testable with fakes.
+// Telegram remote control: long-polls getUpdates и раздаёт команды в
+// инжектированные хендлеры. Без Electron-зависимостей — `request` (axios в
+// проде), доступ к токену/ключу/чату и хендлеры инжектятся, поэтому модуль
+// тестируется фейками.
 //
-// Security model: the bot answers exactly one chat. If no chat id is bound
-// yet, the first `/start` received binds that chat (persisted via
-// `bindChatId`); every message from any other chat is silently ignored.
+// Модель безопасности: бот отвечает ровно одному чату. Пока чат не привязан,
+// принимается только `/start <ключ>` с ключом, вшитым в сборку; всё остальное
+// от непривязанных чатов игнорируется молча. После привязки чужие чаты
+// игнорируются молча.
+
+const {
+    parseCommand, parseLogin, parseAutostop, parseRemind, parseToggle,
+} = require('./commands');
 
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
 const HELP = [
-    'TS Activity Keeper — remote control:',
-    '/status — tracking status, activity timer, today/week hours',
-    '/pause — stop tracking',
-    '/resume — start tracking',
-    '/logout — sign out of the account (tracking stops)',
-    '/quit — quit the app on the Mac',
-    '/revoke — delete the bot key from the app and disconnect',
-    '/help — this message',
+    'TS Activity Keeper — управление:',
+    '/status — статус, часы за сегодня и неделю',
+    '/login <email> <пароль> — войти в аккаунт и запустить трекинг',
+    '/logout — выйти из аккаунта (трекинг останавливается)',
+    '/pause — остановить трекинг',
+    '/resume — запустить трекинг',
+    '/autostop <минуты> [logout] — таймер автостопа, /autostop off — выключить',
+    '/autostart on|off — автозапуск при входе в macOS',
+    '/remind <минуты>|off — как часто напоминать, что время не считается',
+    '/hidelogin — маскировать логин в ответах (обратно не выключается)',
+    '/quit — выйти из приложения на Маке',
+    '/help — это сообщение',
 ].join('\n');
 
 function createTelegramBot(opts) {
     const request = opts.request;
     const getToken = opts.getToken;
+    const getSecret = opts.getSecret || (() => '');
     const getChatId = opts.getChatId;
     const bindChatId = opts.bindChatId;
     const handlers = opts.handlers || {};
@@ -52,40 +62,49 @@ function createTelegramBot(opts) {
         await api('sendMessage', { chat_id: chatId, text });
     }
 
-    async function handleCommand(cmd, chatId) {
+    // Каждый хендлер возвращает текст ответа — бот сам его отправляет.
+    async function handleCommand(parsed, chatId) {
+        const { cmd, args } = parsed;
         switch (cmd) {
             case '/start':
             case '/help':
-                await send(chatId, HELP);
-                break;
+                return send(chatId, HELP);
             case '/status':
-                await send(chatId, await handlers.status());
-                break;
-            case '/pause':
-                await handlers.pause();
-                await send(chatId, 'Tracking stopped.');
-                break;
-            case '/resume':
-                await handlers.resume();
-                await send(chatId, 'Tracking starting…');
-                break;
+                return send(chatId, await handlers.status());
+            case '/login': {
+                const p = parseLogin(args);
+                if (!p.ok) return send(chatId, p.error);
+                return send(chatId, await handlers.login(p.email, p.password));
+            }
             case '/logout':
-                await send(chatId, 'Logging out — tracking stops; sign in again on the Mac.');
-                await handlers.logout();
-                break;
+                return send(chatId, await handlers.logout());
+            case '/pause':
+                return send(chatId, await handlers.pause());
+            case '/resume':
+                return send(chatId, await handlers.resume());
+            case '/autostop': {
+                const p = parseAutostop(args);
+                if (!p.ok) return send(chatId, p.error);
+                return send(chatId, await handlers.autostop(p.minutes, p.logout));
+            }
+            case '/autostart': {
+                const p = parseToggle(args);
+                if (!p.ok) return send(chatId, p.error);
+                return send(chatId, await handlers.autostart(p.on));
+            }
+            case '/remind': {
+                const p = parseRemind(args);
+                if (!p.ok) return send(chatId, p.error);
+                return send(chatId, await handlers.remind(p.minutes));
+            }
+            case '/hidelogin':
+                return send(chatId, await handlers.hidelogin());
             case '/quit':
-                await send(chatId, 'Quitting the app on the Mac. Goodbye.');
-                await handlers.quit();
-                break;
-            case '/revoke':
-                // Confirm while the token is still valid, then stop polling and
-                // let the app delete the key from its config.
-                await send(chatId, 'Bot key deleted from the app. This bot is now disconnected.');
-                stop();
-                await handlers.revoke();
-                break;
+                // Предупреждаем, пока процесс ещё жив.
+                await send(chatId, 'Выхожу из приложения. Запустить обратно можно только с Мака.');
+                return handlers.quit();
             default:
-                await send(chatId, 'Unknown command. Send /help for the list.');
+                return send(chatId, 'Неизвестная команда. /help — список.');
         }
     }
 
@@ -94,16 +113,23 @@ function createTelegramBot(opts) {
         if (!msg || !msg.chat || typeof msg.text !== 'string') return;
         const fromChat = String(msg.chat.id);
         const bound = String(getChatId() || '');
-        const cmd = msg.text.trim().split(/[\s@]/)[0].toLowerCase();
+        const parsed = parseCommand(msg.text);
+        if (!parsed) return;
+
         if (!bound) {
-            if (cmd === '/start') {
-                bindChatId(fromChat);
-                await send(fromChat, 'Connected to TS Activity Keeper.\n\n' + HELP);
+            // Привязка только по /start с ключом из сборки.
+            if (parsed.cmd !== '/start') return;
+            const secret = String(getSecret() || '');
+            if (!secret || parsed.args[0] !== secret) {
+                await send(fromChat, 'Неверный ключ.');
+                return;
             }
-            return; // unbound: ignore everything except the binding /start
+            bindChatId(fromChat);
+            await send(fromChat, 'Подключено к TS Activity Keeper.\n\n' + HELP);
+            return;
         }
-        if (fromChat !== bound) return; // foreign chats are silently ignored
-        await handleCommand(cmd, fromChat);
+        if (fromChat !== bound) return; // чужие чаты — молча мимо
+        await handleCommand(parsed, fromChat);
     }
 
     // One getUpdates round-trip. Returns false when the call failed (caller
