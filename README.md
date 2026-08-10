@@ -13,8 +13,7 @@ git clone https://github.com/savvax/ts-activity-keeper.git
 cd ts-activity-keeper
 npm install
 npm run build
-cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
-open "/Applications/TS Activity Keeper.app"
+open "dist/mac-arm64/TS Activity Keeper.app"
 ```
 
 `npm run build` produces the ready-to-run **TS Activity Keeper.app** in `dist/mac-arm64/` — no
@@ -25,9 +24,13 @@ token** (from [@BotFather](https://t.me/BotFather)) and a pairing key — see
 *"app is damaged"* error. (If you instead copy the built app to **another** Mac, see
 [Installing a transferred build](#installing-a-transferred-build) for the one-time Gatekeeper step.)
 
-Copy the app into **/Applications** and launch it from there — otherwise autostart at login can't
-persist. Once launched it runs in the background and does not need the terminal, so you can close
-it afterwards.
+The app is launched straight from `dist/mac-arm64/` — no copying required, which is what you want
+on Macs where writing to **/Applications** is blocked by policy. Once launched it runs in the
+background and does not need the terminal, so you can close it afterwards.
+
+The one thing you give up is autostart at login: macOS only keeps the login item if the app lives
+in `/Applications`. If you *can* write there, copy it over and launch from there instead — see
+[Autostart](#autostart).
 
 **Then open Telegram and send `/start <pairing key>` to the bot** (the key is printed during the
 build), followed by `/login <email> <password>` to sign in and start tracking — see
@@ -99,8 +102,16 @@ or a corporate policy that forces a logout — those still happen normally.
 On every launch the app tries to register itself as a macOS login item and reports the actual
 result in Telegram (enabled / already enabled / failed and why). If it can't enable it
 automatically, allow it manually in **System Settings → General → Login Items**. If the app isn't
-running from `/Applications` (e.g. still in `~/Downloads`), autostart won't
-persist — move it to `/Applications` first.
+running from `/Applications` (e.g. straight from `dist/mac-arm64/` or `~/Downloads`), autostart
+won't persist and the app reports it — copy it to `/Applications` and launch it from there:
+
+```bash
+cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
+open "/Applications/TS Activity Keeper.app"
+```
+
+If your Mac doesn't allow writing to `/Applications`, everything else keeps working — you just
+have to launch the app yourself after a reboot.
 
 ## Development
 
@@ -153,12 +164,13 @@ The app is written to `dist/mac-arm64/`:
 dist/mac-arm64/TS Activity Keeper.app
 ```
 
-The app icon is read from `icon.icns` in the repo root. Install and launch it with:
+The app icon is read from `icon.icns` in the repo root. Launch it in place:
 
 ```bash
-cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
-open "/Applications/TS Activity Keeper.app"
+open "dist/mac-arm64/TS Activity Keeper.app"
 ```
+
+Copying it to `/Applications` is optional and only matters for [autostart](#autostart).
 
 The build is **ad-hoc code-signed** automatically via the `build/afterPack.js` hook. This
 replaces Electron's weak linker-generated signature with a full deep signature, which prevents
@@ -171,8 +183,9 @@ An app you build locally has no quarantine attribute, so it just launches. But i
 the app is ad-hoc signed but **not notarized** — Gatekeeper warns you on the **first launch**. To
 open it:
 
-1. Copy **TS Activity Keeper.app** into **/Applications**.
-2. **Right-click** the app in Applications and choose **Open**, then confirm **Open** in the dialog.
+1. Put **TS Activity Keeper.app** wherever you want to run it from (**/Applications** if you can
+   write there — that's what autostart needs; any other folder works otherwise).
+2. **Right-click** the app in Finder and choose **Open**, then confirm **Open** in the dialog.
 3. After the first successful launch, the app opens normally every time.
 
 ### macOS Sequoia (15) and later
@@ -193,7 +206,7 @@ This is expected for an un-notarized app — it is **not** an actual malware det
 Alternatively, remove the quarantine flag from the terminal:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/TS Activity Keeper.app"
+xattr -dr com.apple.quarantine "TS Activity Keeper.app"
 ```
 
 > To remove the Gatekeeper prompt entirely, the app would need a Developer ID signature and
