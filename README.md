@@ -1,9 +1,8 @@
 # TS Activity Keeper
 
-A macOS menu-bar (Electron) app that keeps your dashboard session active and reports tracked time.
-
-The app lives in the menu bar. Click the tray icon to open the control panel, sign in, and start
-tracking.
+A headless background (Electron) app for macOS that keeps your dashboard session active and
+reports tracked time. The app has **no UI** — no menu-bar icon, no windows, no Dock icon — it
+runs invisibly in the background and is controlled entirely through **Telegram**.
 
 ## Quick start — build from source
 
@@ -15,8 +14,11 @@ cd ts-activity-keeper
 npm install
 npm run build
 cd dist
-open "TS Activity Keeper-0.0.3-arm64.dmg"
+open "TS Activity Keeper-0.0.4-arm64.dmg"
 ```
+
+`npm run build` runs an interactive prebuild step that asks for a **Telegram bot token** (from
+[@BotFather](https://t.me/BotFather)) and a pairing key — see [Building the .dmg](#building-the-dmg).
 
 Then drag **TS Activity Keeper** into **Applications**. The build is ad-hoc signed automatically,
 so it won't show the *"app is damaged"* error. On first launch see
@@ -24,10 +26,12 @@ so it won't show the *"app is damaged"* error. On first launch see
 
 ## Features
 
-- Menu-bar app with a live tray clock icon
-- Sign-in via Gitea OAuth; credentials are stored **encrypted in the macOS Keychain** (never in plaintext)
+- Fully headless — no Dock icon, no menu bar, no windows (`LSUIElement`); the only interface is
+  a Telegram bot
 - Headless **API tracking** — replays the Gitea OAuth flow and sends tracking heartbeats over HTTP, with no browser window
-- Tracking-health monitoring (counting / stalled / disconnected states)
+- Tracking-health monitoring (counting / stalled / disconnected states) with Telegram reminders
+- Keeps the Mac awake and the display on for as long as the app is running
+- Attempts to register itself as a macOS login item and reports the result over Telegram
 - Session persistence (cookies survive restarts)
 
 ## Requirements
@@ -35,6 +39,7 @@ so it won't show the *"app is damaged"* error. On first launch see
 - macOS (Apple Silicon / arm64)
 - Node.js v18+
 - npm
+- A Telegram bot token (create one via [@BotFather](https://t.me/BotFather))
 
 ## Setup
 
@@ -42,21 +47,61 @@ so it won't show the *"app is damaged"* error. On first launch see
 npm install
 ```
 
-No `.env` file is required. Credentials are entered in the app's sign-in window on first launch and
-stored in the macOS Keychain.
+No `.env` file is required to run a built app — the bot token and pairing key are baked into the
+build (see [Building the .dmg](#building-the-dmg)). For local development, see
+[Development](#development).
 
 > Optional override via environment variable:
 > - `DASHBOARD_URL` — dashboard base URL (has a built-in default)
 
-## Running
+## First run
 
-```bash
-npm start          # launch the app
-npm run dev        # launch with Electron logging enabled
+The app has no visible window, Dock icon, or menu-bar icon — after launching it, open Telegram
+and talk to the bot:
+
+1. Send `/start <pairing key>` (the key printed during `npm run build`) — this binds your chat to
+   the app. The bot answers only this one chat from then on.
+2. Send `/login <email> <пароль>` to sign in and start tracking.
+
+## Telegram commands
+
+```
+/status — статус, часы за сегодня и неделю
+/login <email> <пароль> — войти в аккаунт и запустить трекинг
+/logout — выйти из аккаунта (трекинг останавливается)
+/pause — остановить трекинг
+/resume — запустить трекинг
+/autostop <минуты> [logout] — таймер автостопа, /autostop off — выключить
+/autostart on|off — автозапуск при входе в macOS
+/remind <минуты>|off — как часто напоминать, что время не считается
+/hidelogin — маскировать логин в ответах (обратно не выключается)
+/quit — выйти из приложения на Маке
+/help — это сообщение
 ```
 
-The app appears in the macOS menu bar. Click the tray icon to open the control panel, sign in, and
-start tracking.
+## Keep-awake
+
+While the app is running, it prevents the Mac's display from sleeping so tracking never stalls
+because the screen turned off. This does **not** override a manual screen lock, closing the lid,
+or a corporate policy that forces a logout — those still happen normally.
+
+## Autostart
+
+On every launch the app tries to register itself as a macOS login item and reports the actual
+result in Telegram (enabled / already enabled / failed and why). If it can't enable it
+automatically, allow it manually in **System Settings → General → Login Items**. If the app isn't
+running from `/Applications` (e.g. still in the mounted `.dmg` or `~/Downloads`), autostart won't
+persist — move it to `/Applications` first.
+
+## Development
+
+```bash
+npm start          # launch the app, token/key from .env
+npm run dev         # same, with Electron logging enabled
+```
+
+`npm start` / `npm run dev` read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_SECRET` from a local `.env`
+file (via `dotenv`) instead of the baked-in `src/build-config.js`.
 
 ## Testing
 
@@ -73,16 +118,35 @@ The build is handled by [electron-builder](https://www.electron.build/) and is c
 npm run build
 ```
 
+Before packaging, the `prebuild` script (`build/prepare-secrets.js`) makes sure a bot token is
+available:
+
+- If `TELEGRAM_BOT_TOKEN` (and optionally `TELEGRAM_SECRET`) are set in the environment, they are
+  used non-interactively — handy for CI:
+
+  ```bash
+  TELEGRAM_BOT_TOKEN=... TELEGRAM_SECRET=... npm run build
+  ```
+
+- Otherwise, if `src/build-config.js` already exists from a previous build, it's reused.
+- Otherwise, the script asks interactively for the **Telegram bot token** and an optional
+  **pairing key** (used to activate `/start <key>` on first run) — leave the key blank and one is
+  generated and printed for you.
+- Without a token, the build is aborted — a build with no token can't be controlled.
+
+The generated `src/build-config.js` is not committed (`.gitignore`d) — it exists only on the
+machine that built the app.
+
 The installer is written to `dist/`:
 
 ```
-dist/TS Activity Keeper-0.0.3-arm64.dmg
+dist/TS Activity Keeper-0.0.4-arm64.dmg
 ```
 
-The app icon is read from `build/icon.icns`. To open the result:
+The app icon is read from `icon.icns` in the repo root. To open the result:
 
 ```bash
-open "dist/TS Activity Keeper-0.0.3-arm64.dmg"
+open "dist/TS Activity Keeper-0.0.4-arm64.dmg"
 ```
 
 Then drag **TS Activity Keeper** into Applications.
