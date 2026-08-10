@@ -38,6 +38,10 @@ let heartbeatErrors = 0;
 let recoveryAttempts = 0;
 let isQuitting = false;
 let autostartResult = null;
+// Поколение heartbeat-цепочки: инкрементируется в startHeartbeatLoop(), чтобы
+// зависшая после /pause итерация (или дубль от быстрого /pause+/resume) себя
+// узнала по несовпадению gen и молча остановилась, не трогая backend.
+let runGen = 0;
 
 let healthState = initialHealthState();
 let reminder = null;
@@ -84,6 +88,7 @@ async function startBot() {
     running = true;
     healthState = initialHealthState();
     sessionClock.reset();
+    recoveryAttempts = 0;
     if (reminder) reminder.stop();
     armAutoStop();
     startDurationTimer();
@@ -173,15 +178,23 @@ function applyHealth(next) {
 function startHeartbeatLoop() {
     clearTimeout(heartbeatTimer);
     heartbeatErrors = 0;
-    heartbeatLoop();
+    const gen = ++runGen;
+    heartbeatLoop(gen);
 }
 
-async function heartbeatLoop() {
-    if (!running) return;
+// `gen` pins this call chain to the heartbeat generation it was started
+// under. /pause bumps `running` false immediately but a chain already past
+// an `await` only notices on its next check — the gen check additionally
+// catches a fast /pause+/resume, where a new chain (new gen) starts while
+// the old one is still in flight; every await is followed by a
+// `!running || gen !== runGen` check so a stale chain never touches the
+// backend (no ensureStarted/heartbeat/recover) and never reschedules itself.
+async function heartbeatLoop(gen) {
+    if (!running || gen !== runGen) return;
 
     if (!backend.isAvailable()) {
         processHealth({ hbOk: false, today: null });
-        if (running) heartbeatTimer = setTimeout(heartbeatLoop, heartbeatInterval());
+        if (running && gen === runGen) heartbeatTimer = setTimeout(() => heartbeatLoop(gen), heartbeatInterval());
         return;
     }
 
@@ -190,11 +203,14 @@ async function heartbeatLoop() {
     if (typeof backend.fetchProgress === 'function') {
         try {
             const progress = await backend.fetchProgress();
+            if (!running || gen !== runGen) return;
             if (progress) updateProgress(progress.todaySeconds, progress.weekSeconds);
         } catch (e) {
             // best-effort, цикл не ломаем
         }
     }
+
+    if (!running || gen !== runGen) return;
 
     if (!backend.isStarted()) {
         try {
@@ -202,10 +218,12 @@ async function heartbeatLoop() {
         } catch (e) {
             console.error('[TRACKING] Re-start failed:', e.message);
         }
+        if (!running || gen !== runGen) return;
     }
 
     try {
         const hb = await backend.heartbeat();
+        if (!running || gen !== runGen) return;
         heartbeatErrors = 0;
         recoveryAttempts = 0;
         let today = null;
@@ -217,6 +235,7 @@ async function heartbeatLoop() {
         }
         processHealth({ hbOk: true, today });
     } catch (e) {
+        if (!running || gen !== runGen) return;
         heartbeatErrors++;
         console.error(`[TRACKING] Heartbeat error (${heartbeatErrors}/3):`, e.message);
         processHealth({ hbOk: false, today: null });
@@ -235,12 +254,13 @@ async function heartbeatLoop() {
                 } catch (recoveryErr) {
                     console.error('[TRACKING] Recovery failed:', recoveryErr.message);
                 }
+                if (!running || gen !== runGen) return;
             }
         }
     }
 
-    if (running) {
-        heartbeatTimer = setTimeout(heartbeatLoop, heartbeatInterval());
+    if (running && gen === runGen) {
+        heartbeatTimer = setTimeout(() => heartbeatLoop(gen), heartbeatInterval());
     }
 }
 
@@ -260,7 +280,9 @@ function startDurationTimer() {
     durationTimer = setInterval(() => {
         state.autoStopRemaining = autoStop.isArmed() ? formatDuration(autoStop.remainingMs()) : null;
         state.duration = formatDuration(sessionClock.elapsedMs());
-        if (autoStop.expired()) onAutoStopExpired();
+        if (autoStop.expired()) {
+            onAutoStopExpired().catch((e) => console.error('[AUTOSTOP] onAutoStopExpired failed:', e.message));
+        }
     }, 1000);
 }
 
@@ -365,14 +387,38 @@ function createTelegram() {
         handlers: {
             status: async () => statusText(),
             login: async (email, password) => {
+                if (running) await stopBot();
+
+                // Пробуем авторизоваться ДО записи на диск: битая пара не
+                // должна сохраниться и не должна переживать перезапуск —
+                // иначе автозапуск будет раз за разом долбить сервер тем же
+                // неверным паролем (риск блокировки аккаунта).
+                const prevEmail = config.email;
+                const prevPassword = config.password;
+                config.email = email;
+                config.password = password;
+
+                let authOk = false;
+                try {
+                    apiBackend.reset();
+                    authOk = await apiBackend.ensureAuth();
+                } catch (e) {
+                    authOk = false;
+                }
+
+                if (!authOk) {
+                    config.email = prevEmail;
+                    config.password = prevPassword;
+                    apiBackend.reset();
+                    return 'Авторизация не удалась — проверь логин и пароль. Аккаунт не сохранён.';
+                }
+
                 try {
                     credentials.save(email, password);
                 } catch (e) {
-                    return 'Не удалось сохранить аккаунт: ' + e.message;
+                    return 'Авторизация прошла, но не удалось сохранить аккаунт на диск: ' + e.message;
                 }
-                config.email = email;
-                config.password = password;
-                if (running) await stopBot();
+
                 return await startBot();
             },
             logout: async () => {
@@ -393,7 +439,7 @@ function createTelegram() {
             },
             autostart: async (on) => {
                 settingsStore.saveSettings({ autostart: on });
-                autostartResult = ensureAutostart({ app, desired: on });
+                autostartResult = safeEnsureAutostart(on);
                 return 'Автозапуск: ' + describeAutostart(autostartResult);
             },
             remind: async (minutes) => {
@@ -407,8 +453,19 @@ function createTelegram() {
                 return 'Логин теперь маскируется: ' + displayEmail();
             },
             quit: async () => {
-                isQuitting = true;
-                app.isQuitting = true;
+                // Останавливаем трекинг сначала (сервер должен узнать, что мы
+                // ушли), затем зовём app.quit() — оно доедет до before-quit,
+                // которое к этому моменту увидит running=false и не станет
+                // повторно стопать backend. Таймаут — чтобы зависший stop()
+                // не заблокировал выход из приложения навсегда.
+                try {
+                    await Promise.race([
+                        stopBot(),
+                        new Promise((resolve) => setTimeout(resolve, 5000)),
+                    ]);
+                } catch (e) {
+                    console.error('[QUIT] Не удалось штатно остановить трекинг:', e.message);
+                }
                 app.quit();
             },
         },
@@ -416,6 +473,37 @@ function createTelegram() {
     });
     if (secrets.token) telegramBot.start(); // висячий long-poll цикл
     else console.error('[TELEGRAM] токен не вшит в сборку — remote control отключён');
+}
+
+// ---- Сетка безопасности -----------------------------------------------------
+// Headless-демон: без окон и трея упавший процесс просто исчезает — Telegram
+// замолкает, keep-awake снимается, никто не узнаёт, что случилось. Ловим то,
+// что иначе тихо убило бы процесс (необработанный reject/throw), логируем во
+// всех деталях и best-effort сообщаем в Telegram. Намеренно НЕ проглатываем
+// (не делаем процесс вечным при повреждённом состоянии) — после уведомления
+// даём процессу упасть как раньше, просто не молча.
+
+process.on('unhandledRejection', (reason) => {
+    const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
+    console.error('[FATAL] Unhandled rejection:', detail);
+    telegramNotify('💥 Внутренняя ошибка (unhandled rejection) — смотри логи на Маке:\n' + detail);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught exception:', err && (err.stack || err.message) || err);
+    telegramNotify('💥 Критическая ошибка (uncaught exception) — приложение может завершиться, смотри логи на Маке:\n'
+        + (err && err.message ? err.message : String(err)));
+});
+
+// В дев-режиме (`npm start`, app.isPackaged === false) не трогаем macOS login
+// items вообще — иначе каждый `npm start` прописывает голый бинарник Electron
+// в объекты входа разработчика. ensureAutostart просто не вызывается; вызовы
+// возвращают a no-op-подобный результат для UI-текста.
+function safeEnsureAutostart(desired) {
+    if (!app.isPackaged) {
+        return { desired, actual: false, ok: true, reason: 'dev' };
+    }
+    return ensureAutostart({ app, desired });
 }
 
 // ---- Запуск ----------------------------------------------------------------
@@ -430,7 +518,7 @@ app.whenReady().then(async () => {
     keepAwake.start();
 
     const settings = settingsStore.loadSettings();
-    autostartResult = ensureAutostart({ app, desired: settings.autostart });
+    autostartResult = safeEnsureAutostart(settings.autostart);
     if (!autostartResult.ok) {
         console.error('[AUTOSTART]', describeAutostart(autostartResult));
     }
@@ -446,7 +534,11 @@ app.whenReady().then(async () => {
 
     const hasAccount = resolveCredentials();
     telegramNotify(startupText());
-    if (hasAccount) setTimeout(startBot, 2000);
+    if (hasAccount) {
+        setTimeout(() => {
+            startBot().catch((e) => console.error('[TRACKING] startBot failed:', e.message));
+        }, 2000);
+    }
 });
 
 app.on('window-all-closed', (e) => {
@@ -459,14 +551,13 @@ app.on('before-quit', (e) => {
     if (isQuitting) return;
     if (running) {
         isQuitting = true;
-        app.isQuitting = true;
         e.preventDefault();
         running = false;
         if (reminder) reminder.stop();
         clearTimeout(heartbeatTimer);
         stopDurationTimer();
         Promise.race([
-            backend.stop(4000),
+            backend.stop(),
             new Promise((resolve) => setTimeout(resolve, 5000)),
         ]).finally(() => app.quit());
     }

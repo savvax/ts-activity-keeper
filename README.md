@@ -143,7 +143,7 @@ The installer is written to `dist/`:
 dist/TS Activity Keeper-0.0.4-arm64.dmg
 ```
 
-The app icon is read from `build/icon.icns`. To open the result:
+The app icon is read from `icon.icns` in the repo root. To open the result:
 
 ```bash
 open "dist/TS Activity Keeper-0.0.4-arm64.dmg"

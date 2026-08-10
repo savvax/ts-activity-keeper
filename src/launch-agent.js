@@ -53,6 +53,7 @@ function ensureAutostart({ app, desired, packaged }) {
 
 function describeAutostart(result) {
     if (!result) return 'неизвестно';
+    if (result.reason === 'dev') return 'не трогаем (запущено не из собранного .app)';
     if (result.desired === false) return 'выкл';
     if (result.ok) return 'включён';
     if (result.reason === 'location') {

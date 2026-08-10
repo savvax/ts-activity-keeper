@@ -134,9 +134,20 @@ function createTelegramBot(opts) {
 
     // One getUpdates round-trip. Returns false when the call failed (caller
     // backs off) — exported for tests.
+    let loggedGetUpdatesFailure = false;
+
     async function pollOnce() {
         const data = await api('getUpdates', { offset, timeout: 25, allowed_updates: ['message'] });
-        if (!data || !data.ok || !Array.isArray(data.result)) return false;
+        if (!data || !data.ok || !Array.isArray(data.result)) {
+            // Логируем причину один раз — иначе неверный/отозванный токен
+            // молча ретраится каждые 5с без единой строки в консоли.
+            if (!loggedGetUpdatesFailure) {
+                loggedGetUpdatesFailure = true;
+                log('telegram getUpdates failed: ' + (data && data.description ? data.description : 'нет ответа / bad response'));
+            }
+            return false;
+        }
+        loggedGetUpdatesFailure = false;
         for (const update of data.result) {
             if (typeof update.update_id === 'number') offset = Math.max(offset, update.update_id + 1);
             try {
