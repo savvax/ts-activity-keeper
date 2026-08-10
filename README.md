@@ -6,37 +6,28 @@ runs invisibly in the background and is controlled entirely through **Telegram**
 
 ## Quick start — build from source
 
-Build the signed `.dmg` yourself in a few commands (macOS, Apple Silicon):
+Build and install in a few commands (macOS, Apple Silicon):
 
 ```bash
 git clone https://github.com/savvax/ts-activity-keeper.git
 cd ts-activity-keeper
 npm install
 npm run build
-cd dist
-open "TS Activity Keeper-0.0.4-arm64.dmg"
-```
-
-`npm run build` runs an interactive prebuild step that asks for a **Telegram bot token** (from
-[@BotFather](https://t.me/BotFather)) and a pairing key — see [Building the .dmg](#building-the-dmg).
-
-Then drag **TS Activity Keeper** into **Applications**. The build is ad-hoc signed automatically,
-so it won't show the *"app is damaged"* error. On first launch see
-[Installing a downloaded build](#installing-a-downloaded-build) for the Gatekeeper approval step.
-
-### If the .dmg step fails
-
-On MDM-managed Macs, mounting disk images can be blocked by policy and the last build step dies
-with `hdiutil: attach failed - no mountable file systems`. The app itself is unaffected — the
-`.dmg` is only a delivery wrapper. Build the `.app` directly instead:
-
-```bash
-npm run build:app
 cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
 open "/Applications/TS Activity Keeper.app"
 ```
 
-The app runs in the background and does not need the terminal — you can close it afterwards.
+`npm run build` produces the ready-to-run **TS Activity Keeper.app** in `dist/mac-arm64/` — no
+`.dmg` packaging, so it works everywhere including MDM-managed Macs where mounting disk images is
+blocked by policy. The build runs an interactive prebuild step that asks for a **Telegram bot
+token** (from [@BotFather](https://t.me/BotFather)) and a pairing key — see
+[Building the app](#building-the-app). It is ad-hoc signed automatically, so it won't show the
+*"app is damaged"* error; on first launch see
+[Installing a downloaded build](#installing-a-downloaded-build) for the Gatekeeper approval step.
+
+Copy the app into **/Applications** and launch it from there — otherwise autostart at login can't
+persist. Once launched it runs in the background and does not need the terminal, so you can close
+it afterwards.
 
 ## Features
 
@@ -62,7 +53,7 @@ npm install
 ```
 
 No `.env` file is required to run a built app — the bot token and pairing key are baked into the
-build (see [Building the .dmg](#building-the-dmg)). For local development, see
+build (see [Building the app](#building-the-app)). For local development, see
 [Development](#development).
 
 > Optional override via environment variable:
@@ -104,7 +95,7 @@ or a corporate policy that forces a logout — those still happen normally.
 On every launch the app tries to register itself as a macOS login item and reports the actual
 result in Telegram (enabled / already enabled / failed and why). If it can't enable it
 automatically, allow it manually in **System Settings → General → Login Items**. If the app isn't
-running from `/Applications` (e.g. still in the mounted `.dmg` or `~/Downloads`), autostart won't
+running from `/Applications` (e.g. still in `~/Downloads`), autostart won't
 persist — move it to `/Applications` first.
 
 ## Development
@@ -123,10 +114,11 @@ file (via `dotenv`) instead of the baked-in `src/build-config.js`.
 npm test           # run the test suite (node --test)
 ```
 
-## Building the .dmg
+## Building the app
 
 The build is handled by [electron-builder](https://www.electron.build/) and is configured in the
-`build` section of `package.json` (target: `dmg`, arm64).
+`build` section of `package.json` (target: `dir`, arm64). It produces the app directly, without
+`.dmg` packaging — so it never trips over `hdiutil` and works on MDM-managed Macs too.
 
 ```bash
 npm run build
@@ -151,31 +143,31 @@ available:
 The generated `src/build-config.js` is not committed (`.gitignore`d) — it exists only on the
 machine that built the app.
 
-The installer is written to `dist/`:
+The app is written to `dist/mac-arm64/`:
 
 ```
-dist/TS Activity Keeper-0.0.4-arm64.dmg
+dist/mac-arm64/TS Activity Keeper.app
 ```
 
-The app icon is read from `icon.icns` in the repo root. To open the result:
+The app icon is read from `icon.icns` in the repo root. Install and launch it with:
 
 ```bash
-open "dist/TS Activity Keeper-0.0.4-arm64.dmg"
+cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
+open "/Applications/TS Activity Keeper.app"
 ```
-
-Then drag **TS Activity Keeper** into Applications.
 
 The build is **ad-hoc code-signed** automatically via the `build/afterPack.js` hook. This
 replaces Electron's weak linker-generated signature with a full deep signature, which prevents
 the misleading *"the app is damaged and can't be opened"* Gatekeeper error.
 
-## Installing a downloaded build
+## Installing a transferred build
 
-The app is ad-hoc signed but **not notarized**, so when you download the `.dmg` from GitHub
-macOS adds a quarantine attribute. On the **first launch** Gatekeeper will still warn you. To
+An app you build locally has no quarantine attribute, so it just launches. But if you copy the
+`.app` to another Mac (AirDrop, download, archive), macOS adds a quarantine attribute and — since
+the app is ad-hoc signed but **not notarized** — Gatekeeper warns you on the **first launch**. To
 open it:
 
-1. Open the `.dmg` and drag **TS Activity Keeper** into **Applications**.
+1. Copy **TS Activity Keeper.app** into **/Applications**.
 2. **Right-click** the app in Applications and choose **Open**, then confirm **Open** in the dialog.
 3. After the first successful launch, the app opens normally every time.
 
