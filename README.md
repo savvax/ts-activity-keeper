@@ -22,12 +22,16 @@ open "/Applications/TS Activity Keeper.app"
 blocked by policy. The build runs an interactive prebuild step that asks for a **Telegram bot
 token** (from [@BotFather](https://t.me/BotFather)) and a pairing key — see
 [Building the app](#building-the-app). It is ad-hoc signed automatically, so it won't show the
-*"app is damaged"* error; on first launch see
-[Installing a downloaded build](#installing-a-downloaded-build) for the Gatekeeper approval step.
+*"app is damaged"* error. (If you instead copy the built app to **another** Mac, see
+[Installing a transferred build](#installing-a-transferred-build) for the one-time Gatekeeper step.)
 
 Copy the app into **/Applications** and launch it from there — otherwise autostart at login can't
 persist. Once launched it runs in the background and does not need the terminal, so you can close
 it afterwards.
+
+**Then open Telegram and send `/start <pairing key>` to the bot** (the key is printed during the
+build), followed by `/login <email> <password>` to sign in and start tracking — see
+[First run](#first-run) and [Telegram commands](#telegram-commands).
 
 ## Features
 
