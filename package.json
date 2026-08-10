@@ -8,6 +8,8 @@
     "dev": "electron . --enable-logging",
     "prebuild": "node build/prepare-secrets.js",
     "build": "electron-builder",
+    "prebuild:app": "node build/prepare-secrets.js",
+    "build:app": "electron-builder --dir",
     "test": "node --test"
   },
   "author": "",

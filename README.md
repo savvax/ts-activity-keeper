@@ -24,6 +24,20 @@ Then drag **TS Activity Keeper** into **Applications**. The build is ad-hoc sign
 so it won't show the *"app is damaged"* error. On first launch see
 [Installing a downloaded build](#installing-a-downloaded-build) for the Gatekeeper approval step.
 
+### If the .dmg step fails
+
+On MDM-managed Macs, mounting disk images can be blocked by policy and the last build step dies
+with `hdiutil: attach failed - no mountable file systems`. The app itself is unaffected — the
+`.dmg` is only a delivery wrapper. Build the `.app` directly instead:
+
+```bash
+npm run build:app
+cp -R "dist/mac-arm64/TS Activity Keeper.app" /Applications/
+open "/Applications/TS Activity Keeper.app"
+```
+
+The app runs in the background and does not need the terminal — you can close it afterwards.
+
 ## Features
 
 - Fully headless — no Dock icon, no menu bar, no windows (`LSUIElement`); the only interface is
