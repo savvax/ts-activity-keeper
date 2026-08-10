@@ -341,7 +341,11 @@ function resolveCredentials() {
 // ---- Telegram --------------------------------------------------------------
 
 function telegramNotify(text) {
-    if (telegramBot) telegramBot.notify(text);
+    // Возвращает промис уведомления (или undefined, если бота нет) — вызовы,
+    // которым результат не нужен, просто игнорируют возврат; фатальный
+    // обработчик ниже дожидается его с собственным таймаутом.
+    if (telegramBot) return telegramBot.notify(text);
+    return undefined;
 }
 
 function statusText() {
@@ -477,12 +481,24 @@ function createTelegram() {
 
 // ---- Сетка безопасности -----------------------------------------------------
 // Headless-демон: без окон и трея упавший процесс просто исчезает — Telegram
-// замолкает, keep-awake снимается, никто не узнаёт, что случилось. Ловим то,
-// что иначе тихо убило бы процесс (необработанный reject/throw), логируем во
-// всех деталях и best-effort сообщаем в Telegram. Намеренно НЕ проглатываем
-// (не делаем процесс вечным при повреждённом состоянии) — после уведомления
-// даём процессу упасть как раньше, просто не молча.
-
+// замолкает, keep-awake снимается, никто не узнаёт, что случилось.
+//
+// unhandledRejection: логируем и best-effort шлём в Telegram, но НЕ выходим —
+// это неблокирующие сетевые/async ошибки, процесс в целом остаётся в рабочем
+// состоянии, и это соответствует тому, как Node ведёт себя без единого
+// listener'а на это событие (сам факт reject не роняет процесс).
+//
+// uncaughtException: здесь всё наоборот. Сам факт наличия listener'а на
+// uncaughtException ОТМЕНЯЕТ дефолтное аварийное завершение Node — если
+// после логирования просто вернуться, процесс продолжит жить. А у
+// headless-демона event loop никогда не опустеет сам собой
+// (heartbeatTimer/durationTimer/powerSaveBlocker всегда что-то держат), так
+// что без явного process.exit() процесс молча зависнет в неконсистентном
+// состоянии — без UI, без супервизора (launchd KeepAlive не настроен),
+// и без единого шанса перезапуститься. Поэтому: логируем, даём best-effort
+// уведомлению в Telegram короткий шанс уйти (с собственным таймаутом, чтобы
+// зависшая отправка не держала процесс вечно) и затем гарантированно выходим
+// с ненулевым кодом.
 process.on('unhandledRejection', (reason) => {
     const detail = reason instanceof Error ? (reason.stack || reason.message) : String(reason);
     console.error('[FATAL] Unhandled rejection:', detail);
@@ -490,9 +506,30 @@ process.on('unhandledRejection', (reason) => {
 });
 
 process.on('uncaughtException', (err) => {
-    console.error('[FATAL] Uncaught exception:', err && (err.stack || err.message) || err);
-    telegramNotify('💥 Критическая ошибка (uncaught exception) — приложение может завершиться, смотри логи на Маке:\n'
-        + (err && err.message ? err.message : String(err)));
+    const detail = (err && (err.stack || err.message)) || String(err);
+    console.error('[FATAL] Uncaught exception — процесс сейчас завершится (exit 1):', detail);
+
+    let exited = false;
+    const exitNow = () => {
+        if (exited) return;
+        exited = true;
+        try {
+            if (keepAwake) keepAwake.stop();
+        } catch (e) {
+            // best-effort — не даём снятию keep-awake задержать выход
+        }
+        process.exit(1);
+    };
+
+    // Гарантированный выход даже если отправка в Telegram зависнет.
+    const timer = setTimeout(exitNow, 1500);
+    if (timer.unref) timer.unref();
+
+    Promise.resolve()
+        .then(() => telegramNotify('💥 Критическая ошибка (uncaught exception) — приложение сейчас завершится, '
+            + 'перезапусти вручную на Маке:\n' + detail))
+        .catch(() => {})
+        .finally(exitNow);
 });
 
 // В дев-режиме (`npm start`, app.isPackaged === false) не трогаем macOS login
