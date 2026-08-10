@@ -20,7 +20,8 @@ open "dist/mac-arm64/TS Activity Keeper.app"
 `.dmg` packaging, so it works everywhere including MDM-managed Macs where mounting disk images is
 blocked by policy. The build runs an interactive prebuild step that asks for a **Telegram bot
 token** (from [@BotFather](https://t.me/BotFather)) and a pairing key — see
-[Building the app](#building-the-app). It is ad-hoc signed automatically, so it won't show the
+[Building the app](#building-the-app) — or skip the prompts entirely and do the whole thing in one
+line with [`npm run build:run`](#build-and-launch-in-one-line). It is ad-hoc signed automatically, so it won't show the
 *"app is damaged"* error. (If you instead copy the built app to **another** Mac, see
 [Installing a transferred build](#installing-a-transferred-build) for the one-time Gatekeeper step.)
 
@@ -122,6 +123,21 @@ npm run dev         # same, with Electron logging enabled
 
 `npm start` / `npm run dev` read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_SECRET` from a local `.env`
 file (via `dotenv`) instead of the baked-in `src/build-config.js`.
+
+### Build and launch in one line
+
+`npm run build:run` bakes the secrets in, builds the app and opens it — no interactive prompts,
+nothing to copy afterwards:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:AA-bot-token TELEGRAM_SECRET=my-pairing-key npm run build:run
+```
+
+`TELEGRAM_BOT_TOKEN` is the bot token from [@BotFather](https://t.me/BotFather);
+`TELEGRAM_SECRET` is the pairing key you'll then send as `/start <key>`. Leave `TELEGRAM_SECRET`
+out and one is generated and printed during the build. Both env vars override an existing
+`src/build-config.js`, so re-running this line with a different token is enough to rebuild against
+another bot.
 
 ## Testing
 

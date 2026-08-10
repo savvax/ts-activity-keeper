@@ -8,6 +8,7 @@
     "dev": "electron . --enable-logging",
     "prebuild": "node build/prepare-secrets.js",
     "build": "electron-builder --dir",
+    "build:run": "npm run build && open \"dist/mac-arm64/TS Activity Keeper.app\"",
     "test": "node --test"
   },
   "author": "",
