@@ -2,12 +2,11 @@ const { readConfig, writeConfig } = require('./config-store');
 const { configPath } = require('./paths');
 
 const DEFAULTS = {
-    notifyReminderMinutes: 5,
-    notifySound: true,
     hideLogin: false,
-    autoStopMinutes: 0,      // 0 = auto-stop disabled
-    autoStopLogout: false,   // when auto-stop fires: also log out
-    telegramToken: '',
+    autoStopMinutes: 0,      // 0 = автостоп выключен
+    autoStopLogout: false,   // при срабатывании автостопа ещё и разлогинить
+    remindMinutes: 5,        // повтор «время не считается»; 0 = без повторов
+    autostart: true,         // прописывать себя в объекты входа
     telegramChatId: '',
 };
 
@@ -20,24 +19,22 @@ function withDefaults(cfg) {
     return out;
 }
 
-// Returns a patch with only the provided, validated keys.
+// Возвращает патч только из переданных и провалидированных ключей.
 function sanitize(patch) {
     patch = patch || {};
     const out = {};
-    if (patch.notifyReminderMinutes != null) {
-        const n = parseInt(patch.notifyReminderMinutes, 10);
-        out.notifyReminderMinutes = Number.isFinite(n) ? Math.max(1, n) : DEFAULTS.notifyReminderMinutes;
-    }
-    if (patch.notifySound != null) out.notifySound = !!patch.notifySound;
-    // hideLogin is one-way: only `true` is ever accepted into a patch. Turning
-    // it back off is enforced impossible here (and additionally in saveSettings).
+    // hideLogin односторонний: в патч попадает только `true`.
     if (patch.hideLogin === true) out.hideLogin = true;
     if (patch.autoStopMinutes != null) {
         const n = parseInt(patch.autoStopMinutes, 10);
         out.autoStopMinutes = Number.isFinite(n) ? Math.max(0, n) : DEFAULTS.autoStopMinutes;
     }
     if (patch.autoStopLogout != null) out.autoStopLogout = !!patch.autoStopLogout;
-    if (patch.telegramToken != null) out.telegramToken = String(patch.telegramToken).trim();
+    if (patch.remindMinutes != null) {
+        const n = parseInt(patch.remindMinutes, 10);
+        out.remindMinutes = Number.isFinite(n) ? Math.max(0, n) : DEFAULTS.remindMinutes;
+    }
+    if (patch.autostart != null) out.autostart = !!patch.autostart;
     if (patch.telegramChatId != null) out.telegramChatId = String(patch.telegramChatId).trim();
     return out;
 }
