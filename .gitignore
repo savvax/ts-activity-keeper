@@ -1,0 +1,17 @@
+.DS_Store
+node_modules/
+
+# Собранные артефакты. ВАЖНО: после `npm run build` в .dmg и app.asar лежит
+# вшитый токен Telegram-бота открытым текстом — эти файлы секретны.
+dist/
+
+# Вшиваемые при сборке секреты (генерятся build/prepare-secrets.js)
+src/build-config.js
+.env
+
+CLAUDE.md
+.claude/
+.kilocode/
+.opencode/
+.pi/
+openspec/
