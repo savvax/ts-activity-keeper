@@ -4,6 +4,7 @@
 // автозапуск и wiring хендлеров бота.
 
 const { app, powerSaveBlocker } = require("electron");
+const { execFile } = require("child_process");
 const axios = require("axios");
 const {
 	randomInt,
@@ -502,7 +503,7 @@ function statusText() {
 		`Автозапуск: ${describeAutostart(autostartResult)}`,
 		`Напоминания: ${s.remindMinutes ? `каждые ${s.remindMinutes} мин` : "выкл"}`,
 		agentStatusLine(),
-		`Keep-awake: ${keepAwake && keepAwake.isActive() ? "активен" : "неактивен"}`,
+		`Keep-awake: ${describeKeepAwake()}`,
 		`Аптайм: ${formatDuration(Date.now() - startedAt)} · версия ${VERSION}`,
 	];
 	if (state.challenge) lines.push("⚠️ Требуется проверка (капча)");
@@ -518,7 +519,7 @@ function startupText() {
 		`▶️ TS Activity Keeper запущен (v${VERSION})`,
 		trackingLine,
 		`Автозапуск: ${describeAutostart(autostartResult)}`,
-		`Keep-awake: ${keepAwake && keepAwake.isActive() ? "активен" : "неактивен"}`,
+		`Keep-awake: ${describeKeepAwake()}`,
 	].join("\n");
 }
 
@@ -710,6 +711,77 @@ function safeEnsureAutostart(desired) {
 	return ensureAutostart({ app, desired });
 }
 
+// ---- Keep-awake: сброс HID idle --------------------------------------------
+// ---- Keep-awake: сброс HID idle через встроенный osascript (JXA) ----------
+// `powerSaveBlocker` (см. keep-awake.js) не даёт экрану/системе уснуть, но НЕ
+// сбрасывает HID idle time — время с последнего HID-события. Именно по нему
+// macOS (и MDM-политики) решают, что пользователь «бездействует», и срабатывают
+// «выйти/перезагрузить при бездействии». Сбросить HID idle можно только реальным
+// HID-событием: двигаем курсор +1px / −1px через CGEvent из CoreGraphics.
+//
+// Никаких внешних бинарников: скрипт на JavaScript for Automation (JXA)
+// выполняется встроенным `osascript`. Бридж CGPoint проверен — корректен.
+//
+// ВАЖНО: постинг синтетических CGEvent на современной macOS требует, чтобы у
+// приложения было Accessibility (System Settings → Privacy & Security →
+// Accessibility → добавить TS Activity Keeper). Это граница ОС — её не обойти
+// кодом ни для какого механизма (cliclick/Swift/native — все упрутся в то же).
+// Поэтому при старте гоняем self-test: реально ли двигается курсор, и если нет —
+// прямо говорим (лог + Telegram) выдать Accessibility.
+let jiggleAvailable = false;
+let axNotified = false;
+
+const JXA_NUDGE = `
+ObjC.import('CoreGraphics');
+var e = $.CGEventCreate(null);
+var loc = $.CGEventGetLocation(e);
+$.CGEventPost($.kCGHIDEventTap, $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, {x: loc.x + 1, y: loc.y}, 0));
+$.CGEventPost($.kCGHIDEventTap, $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, loc, 0));
+"ok";
+`;
+
+// Self-test: двигаем на +40px, читаем позицию обратно, возвращаем на место.
+// «1» — курсор реально сдвинулся (Accessibility есть), «0» — пост отфильтрован.
+const JXA_PROBE = `
+ObjC.import('CoreGraphics');
+ObjC.import('Foundation');
+function pos() { var e = $.CGEventCreate(null); return $.CGEventGetLocation(e); }
+function sleep(ms) { $.NSThread.sleepForTimeInterval(ms / 1000); }
+var a = pos();
+$.CGEventPost($.kCGHIDEventTap, $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, {x: a.x + 40, y: a.y}, 0));
+sleep(60);
+var b = pos();
+$.CGEventPost($.kCGHIDEventTap, $.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, a, 0));
+Math.abs(b.x - a.x) > 5 ? "1" : "0";
+`;
+
+function runJxa(script) {
+	return new Promise((resolve, reject) => {
+		const child = execFile("osascript", ["-l", "JavaScript"], (err, stdout) => {
+			if (err) reject(err);
+			else resolve(stdout.trim());
+		});
+		child.stdin.end(script);
+	});
+}
+
+async function probeJiggle() {
+	try {
+		return (await runJxa(JXA_PROBE)) === "1";
+	} catch {
+		return false;
+	}
+}
+
+function describeKeepAwake() {
+	if (!keepAwake || !keepAwake.isActive()) return "неактивен";
+	if (keepAwake.isNudging() && jiggleAvailable)
+		return "активен (анти-сон + анти-idle)";
+	if (keepAwake.isNudging())
+		return "активен (анти-сон; анти-idle ждёт Accessibility)";
+	return "активен (только анти-сон)";
+}
+
 // ---- Запуск ----------------------------------------------------------------
 
 app.whenReady().then(async () => {
@@ -718,8 +790,40 @@ app.whenReady().then(async () => {
 	keepAwake = createKeepAwake({
 		blocker: powerSaveBlocker,
 		log: (msg) => console.error("[KEEP-AWAKE]", msg),
+		nudge: () => runJxa(JXA_NUDGE),
 	});
 	keepAwake.start();
+
+	// Периодически проверяем реальную работоспособность сброса HID idle: постинг
+	// CGEvent требует Accessibility, а его выдают вручную (обычно ПОСЛЕ первого
+	// запуска). Чтобы демон сам «ожил», как только доступ выдан, — перепроверяем
+	// каждые 2 мин и обновляем статус (headless-режим, ручной рестарт не очевиден).
+	function runProbe() {
+		probeJiggle().then((ok) => {
+			const was = jiggleAvailable;
+			jiggleAvailable = ok;
+			if (ok && !was) {
+				axNotified = false; // AX мог «слететь» после ребилда — разрешить алерт снова
+				console.log("[KEEP-AWAKE] JXA-тычок работает — HID idle сбрасывается.");
+				telegramNotify(
+					"✅ Защита от бездействия работает: HID idle сбрасывается.",
+				);
+			} else if (!ok && !axNotified) {
+				axNotified = true;
+				console.error(
+					"[KEEP-AWAKE] JXA-тычок не двигает курсор — приложению не выдано Accessibility. HID idle НЕ сбрасывается: политика «перезагрузка по бездействию» может сработать. Выдай: System Settings → Privacy & Security → Accessibility → добавь TS Activity Keeper",
+				);
+				telegramNotify(
+					"⚠️ Защита от «перезагрузки по бездействию» требует Accessibility.\n" +
+						"System Settings → Privacy & Security → Accessibility → включи TS Activity Keeper.\n" +
+						"Без этого мышь не двигается и HID idle не сбрасывается.",
+				);
+			}
+		});
+	}
+	runProbe();
+	const probeTimer = setInterval(runProbe, 120000);
+	if (probeTimer.unref) probeTimer.unref();
 
 	const settings = settingsStore.loadSettings();
 	autostartResult = safeEnsureAutostart(settings.autostart);
