@@ -5,6 +5,7 @@
 
 const { app, powerSaveBlocker } = require("electron");
 const { execFile, spawn } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const {
@@ -24,7 +25,7 @@ const { createReminder } = require("./reminder");
 const { createAutoStop } = require("./auto-stop");
 const { createTelegramBot } = require("./telegram-bot");
 const { createKeepAwake } = require("./keep-awake");
-const { createSilentAudio } = require("./silent-audio");
+const { createSilentAudio, buildSilentWav } = require("./silent-audio");
 const { ensureAutostart, describeAutostart } = require("./launch-agent");
 const { loadBuildSecrets } = require("./build-config-loader");
 const settingsStore = require("./settings");
@@ -601,9 +602,15 @@ function createTelegram() {
 			},
 			audio: async (on) => {
 				settingsStore.saveSettings({ audioKeepAlive: on });
-				if (on) silentAudio && silentAudio.start();
-				else silentAudio && silentAudio.stop();
-				return "Аудио-анти-idle: " + (on ? "включено" : "выключено");
+				if (on) {
+					silentAudio && silentAudio.start();
+					const ok = silentAudio && silentAudio.isActive();
+					return ok
+						? "Аудио-анти-idle: включено (крутится)."
+						: "Аудио-анти-idle: не запустился — afplay не открыл wav. Смотри лог SILENT-AUDIO на Маке.";
+				}
+				silentAudio && silentAudio.stop();
+				return "Аудио-анти-idle: выключено.";
 			},
 			remind: async (minutes) => {
 				settingsStore.saveSettings({ remindMinutes: minutes });
@@ -793,6 +800,24 @@ function describeKeepAwake() {
 	return "активен (только анти-сон)";
 }
 
+// Резолвит реальный путь к silence.wav. В бандле — из Resources/ (extraResources),
+// в dev — из репо. Если шипаемый файл не найден (старая сборка, extraResources не
+// сработал) — генерит его в userData, чтобы фича работала в любом билде.
+function ensureSilenceWav() {
+	const shipped = app.isPackaged
+		? path.join(process.resourcesPath, "silence.wav")
+		: path.join(__dirname, "..", "resources", "silence.wav");
+	if (fs.existsSync(shipped)) return shipped;
+	const fallback = path.join(app.getPath("userData"), "silence.wav");
+	try {
+		if (!fs.existsSync(fallback)) fs.writeFileSync(fallback, buildSilentWav());
+		return fallback;
+	} catch (e) {
+		console.error("[SILENT-AUDIO] не удалось подготовить wav:", e.message);
+		return null;
+	}
+}
+
 // ---- Запуск ----------------------------------------------------------------
 
 app.whenReady().then(async () => {
@@ -810,9 +835,7 @@ app.whenReady().then(async () => {
 	// На HID-idle-демонах не поможет, но тогда в деле keep-awake/nudge.
 	silentAudio = createSilentAudio({
 		spawn,
-		wavPath: app.isPackaged
-			? path.join(process.resourcesPath, "silence.wav")
-			: path.join(__dirname, "..", "resources", "silence.wav"),
+		wavPath: ensureSilenceWav(),
 		log: (msg) => console.error("[SILENT-AUDIO]", msg),
 	});
 	if (settingsStore.loadSettings().audioKeepAlive) silentAudio.start();

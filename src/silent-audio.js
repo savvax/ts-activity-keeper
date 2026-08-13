@@ -25,10 +25,10 @@ function buildSilentWav(
 	const numSamples = sampleRate * seconds;
 	const dataSize = numSamples * 2; // 16-bit mono
 	const buf = Buffer.alloc(44 + dataSize);
-	buf.write('RIFF', 0);
+	buf.write("RIFF", 0);
 	buf.writeUInt32LE(36 + dataSize, 4);
-	buf.write('WAVE', 8);
-	buf.write('fmt ', 12);
+	buf.write("WAVE", 8);
+	buf.write("fmt ", 12);
 	buf.writeUInt32LE(16, 16); // fmt subchunk size
 	buf.writeUInt16LE(1, 20); // PCM
 	buf.writeUInt16LE(1, 22); // mono
@@ -36,15 +36,13 @@ function buildSilentWav(
 	buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
 	buf.writeUInt16LE(2, 32); // block align
 	buf.writeUInt16LE(16, 34); // bits per sample
-	buf.write('data', 36);
+	buf.write("data", 36);
 	buf.writeUInt32LE(dataSize, 40);
 	const amp = 100; // из 32767
 	const freq = 220;
 	let offset = 44;
 	for (let i = 0; i < numSamples; i++) {
-		const v = Math.round(
-			Math.sin((2 * Math.PI * freq * i) / sampleRate) * amp,
-		);
+		const v = Math.round(Math.sin((2 * Math.PI * freq * i) / sampleRate) * amp);
 		buf.writeInt16LE(v, offset);
 		offset += 2;
 	}
@@ -62,23 +60,35 @@ function createSilentAudio({
 	let relaunchTimer = null;
 	let stopping = true;
 	let lastSpawnAt = 0;
+	let loggedFastFail = false;
 
 	function spawnPlayer() {
 		if (stopping || !wavPath) return;
 		try {
-			child = spawn('afplay', ['-q', wavPath], { stdio: 'ignore' });
+			child = spawn("afplay", ["-q", wavPath], { stdio: "ignore" });
 			lastSpawnAt = Date.now();
-			child.on('exit', () => {
+			child.on("exit", () => {
 				child = null;
 				if (stopping) return;
 				// Нормальный проигрыш ~seconds; мгновенный выход = ошибка → бэкофф,
 				// чтобы не закрутить tight-цикл респавна при стойкой проблеме.
 				const ran = Date.now() - lastSpawnAt;
-				const delay = ran < 1000 ? 5000 : 100;
-				relaunchTimer = setTimeoutFn(spawnPlayer, delay);
+				if (ran < 1000) {
+					if (!loggedFastFail) {
+						loggedFastFail = true;
+						log(
+							"silent-audio: afplay падает сразу — не найден/не читается wav: " +
+								wavPath,
+						);
+					}
+					relaunchTimer = setTimeoutFn(spawnPlayer, 5000);
+				} else {
+					loggedFastFail = false;
+					relaunchTimer = setTimeoutFn(spawnPlayer, 100);
+				}
 			});
 		} catch (e) {
-			log('silent-audio: afplay не стартует: ' + e.message);
+			log("silent-audio: afplay не стартует: " + e.message);
 			relaunchTimer = setTimeoutFn(spawnPlayer, 5000);
 		}
 	}
