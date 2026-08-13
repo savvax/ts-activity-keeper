@@ -23,6 +23,7 @@ const HELP = [
     '/resume — запустить трекинг',
     '/autostop <минуты> [logout] — таймер автостопа, /autostop off — выключить',
     '/autostart on|off — автозапуск при входе в macOS',
+    '/audio on|off — почти бесшумный аудио против автовыхода (по умолчанию вкл)',
     '/remind <минуты>|off — как часто напоминать, что время не считается',
     '/hidelogin — маскировать логин в ответах (обратно не выключается)',
     '/quit — выйти из приложения на Маке',
@@ -91,6 +92,11 @@ function createTelegramBot(opts) {
                 const p = parseToggle(args);
                 if (!p.ok) return send(chatId, p.error);
                 return send(chatId, await handlers.autostart(p.on));
+            }
+            case '/audio': {
+                const p = parseToggle(args);
+                if (!p.ok) return send(chatId, p.error);
+                return send(chatId, await handlers.audio(p.on));
             }
             case '/remind': {
                 const p = parseRemind(args);

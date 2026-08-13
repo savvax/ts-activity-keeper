@@ -4,8 +4,8 @@ const { DEFAULTS, withDefaults, sanitize } = require('../src/settings');
 
 test('DEFAULTS содержит только актуальные ключи', () => {
   assert.deepStrictEqual(Object.keys(DEFAULTS).sort(), [
-    'autoStopLogout', 'autoStopMinutes', 'autostart', 'hideLogin',
-    'remindMinutes', 'telegramChatId',
+    'audioKeepAlive', 'autoStopLogout', 'autoStopMinutes', 'autostart',
+    'hideLogin', 'remindMinutes', 'telegramChatId',
   ]);
   assert.strictEqual(DEFAULTS.remindMinutes, 5);
   assert.strictEqual(DEFAULTS.autostart, true);
@@ -49,6 +49,11 @@ test('sanitize: hideLogin односторонний — false отбрасыв�
 test('sanitize: autostart приводится к boolean', () => {
   assert.strictEqual(sanitize({ autostart: 'on' }).autostart, true);
   assert.strictEqual(sanitize({ autostart: false }).autostart, false);
+});
+
+test('sanitize: audioKeepAlive приводится к boolean', () => {
+  assert.strictEqual(sanitize({ audioKeepAlive: 'on' }).audioKeepAlive, true);
+  assert.strictEqual(sanitize({ audioKeepAlive: false }).audioKeepAlive, false);
 });
 
 test('sanitize: telegramChatId тримится, telegramToken больше не принимается', () => {

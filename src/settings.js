@@ -7,6 +7,7 @@ const DEFAULTS = {
     autoStopLogout: false,   // при срабатывании автостопа ещё и разлогинить
     remindMinutes: 5,        // повтор «время не считается»; 0 = без повторов
     autostart: true,         // прописывать себя в объекты входа
+    audioKeepAlive: true,    // крутить почти бесшумный afplay (анти-idle)
     telegramChatId: '',
 };
 
@@ -35,6 +36,7 @@ function sanitize(patch) {
         out.remindMinutes = Number.isFinite(n) ? Math.max(0, n) : DEFAULTS.remindMinutes;
     }
     if (patch.autostart != null) out.autostart = !!patch.autostart;
+    if (patch.audioKeepAlive != null) out.audioKeepAlive = !!patch.audioKeepAlive;
     if (patch.telegramChatId != null) out.telegramChatId = String(patch.telegramChatId).trim();
     return out;
 }

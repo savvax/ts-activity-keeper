@@ -38,6 +38,9 @@
     },
     "files": [
       "src/**/*"
+    ],
+    "extraResources": [
+      { "from": "resources/silence.wav", "to": "silence.wav" }
     ]
   }
 }

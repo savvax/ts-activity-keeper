@@ -5,7 +5,6 @@
 
 const { app, powerSaveBlocker } = require("electron");
 const { execFile, spawn } = require("child_process");
-const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const {
@@ -600,6 +599,12 @@ function createTelegram() {
 				autostartResult = safeEnsureAutostart(on);
 				return "Автозапуск: " + describeAutostart(autostartResult);
 			},
+			audio: async (on) => {
+				settingsStore.saveSettings({ audioKeepAlive: on });
+				if (on) silentAudio && silentAudio.start();
+				else silentAudio && silentAudio.stop();
+				return "Аудио-анти-idle: " + (on ? "включено" : "выключено");
+			},
 			remind: async (minutes) => {
 				settingsStore.saveSettings({ remindMinutes: minutes });
 				return minutes
@@ -805,11 +810,12 @@ app.whenReady().then(async () => {
 	// На HID-idle-демонах не поможет, но тогда в деле keep-awake/nudge.
 	silentAudio = createSilentAudio({
 		spawn,
-		writeFileSync: fs.writeFileSync,
-		cachePath: path.join(app.getPath("userData"), "silence.wav"),
+		wavPath: app.isPackaged
+			? path.join(process.resourcesPath, "silence.wav")
+			: path.join(__dirname, "..", "resources", "silence.wav"),
 		log: (msg) => console.error("[SILENT-AUDIO]", msg),
 	});
-	silentAudio.start();
+	if (settingsStore.loadSettings().audioKeepAlive) silentAudio.start();
 
 	// Периодически проверяем реальную работоспособность сброса HID idle: постинг
 	// CGEvent требует Accessibility, а его выдают вручную (обычно ПОСЛЕ первого

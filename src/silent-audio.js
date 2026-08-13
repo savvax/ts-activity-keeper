@@ -1,21 +1,23 @@
-// Крутит почти бесшумный аудио-поток через встроенный `afplay`.
+// Крутит почти бесшумный аудио-поток через встроенный `afplay`, читая готовый
+// silence.wav (поставляется в репозитории: resources/silence.wav, в бандл —
+// через electron-builder extraResources, чтобы внешний afplay мог его открыть).
 //
 // Зачем: некоторые idle-logout-политики (в т.ч. кастомные корпоративные демоны)
 // не считают сессию «бездействующей», пока играет звук/видео. Если демон
 // `ai.tomorrowschool.idlelogout` именно такой — этот зацикленный тихий звук
 // отменяет автовыход БЕЗ Accessibility и БЕЗ прав администратора (нужен только
-// встроенный afplay). Если же демон завязан на HID idle — это не поможет
-// (там нужна мышь, см. keep-awake); модуль всё равно безопасен и дешев, поэтому
-// крутится всегда.
+// встроенный afplay). На HID-idle-демонах не поможет, но модуль безвреден.
 //
-// Аудиофайл (низкоамплитудная синусоида, на слух неразличимая, но НЕ цифровой
-// ноль — чтобы детекторы «активного аудиопотока» её видели) генерируется один
-// раз в cachePath и переиспользуется. spawn/writeFileSync/setTimeout инжектятся
-// — модуль теструется без Electron и без реального фс/аудио.
+// WAV один раз сгенерирован buildSilentWav() и лежит в репо; в рантайме файл
+// не пересоздаётся — createSilentAudio получает готовый wavPath. spawn/setTimeout
+// инжектятся — модуль тестируется без Electron и без реального аудио.
 
 const DEFAULT_SECONDS = 60;
 const DEFAULT_SAMPLE_RATE = 8000;
 
+// Генерация WAV (низкоамплитудная синусоида, ~-50 дБ — на слух неразличимо, но
+// НЕ цифровой ноль, чтобы CoreAudio видел активный поток). Экспортируется, чтобы
+// (пере)генерировать resources/silence.wav скриптом и покрывать заголовок тестом.
 function buildSilentWav(
 	seconds = DEFAULT_SECONDS,
 	sampleRate = DEFAULT_SAMPLE_RATE,
@@ -36,8 +38,6 @@ function buildSilentWav(
 	buf.writeUInt16LE(16, 34); // bits per sample
 	buf.write('data', 36);
 	buf.writeUInt32LE(dataSize, 40);
-	// Низкоамплитудная синусоида (~-50 дБ, неслышимо на динамиках ноутбука,
-	// но ненулевой сигнал — CoreAudio видит активный поток рендера).
 	const amp = 100; // из 32767
 	const freq = 220;
 	let offset = 44;
@@ -53,35 +53,20 @@ function buildSilentWav(
 
 function createSilentAudio({
 	spawn,
-	writeFileSync,
-	cachePath,
+	wavPath,
 	log = () => {},
-	seconds = DEFAULT_SECONDS,
-	sampleRate = DEFAULT_SAMPLE_RATE,
 	setTimeoutFn = setTimeout,
 	clearTimeoutFn = clearTimeout,
 }) {
 	let child = null;
 	let relaunchTimer = null;
-	let fileReady = false;
 	let stopping = true;
 	let lastSpawnAt = 0;
 
-	function ensureFile() {
-		if (fileReady) return;
-		try {
-			writeFileSync(cachePath, buildSilentWav(seconds, sampleRate));
-			fileReady = true;
-		} catch (e) {
-			log('silent-audio: не удалось записать wav: ' + e.message);
-			fileReady = false;
-		}
-	}
-
 	function spawnPlayer() {
-		if (stopping || !fileReady) return;
+		if (stopping || !wavPath) return;
 		try {
-			child = spawn('afplay', ['-q', cachePath], { stdio: 'ignore' });
+			child = spawn('afplay', ['-q', wavPath], { stdio: 'ignore' });
 			lastSpawnAt = Date.now();
 			child.on('exit', () => {
 				child = null;
@@ -100,9 +85,9 @@ function createSilentAudio({
 
 	return {
 		start() {
-			ensureFile();
-			if (!fileReady) return false;
+			if (!wavPath) return false;
 			stopping = false;
+			if (child) return true; // уже крутится
 			spawnPlayer();
 			return true;
 		},

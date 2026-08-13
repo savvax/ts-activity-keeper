@@ -43,8 +43,7 @@ test('buildSilentWav: сигнал ненулевой, но низкой амп�
   assert.ok(max <= 32767, 'в пределах 16-бит');
 });
 
-test('start: генерирует wav и запускает afplay с путём к нему', () => {
-  const written = {};
+test('start: запускает afplay с переданным wavPath', () => {
   const children = [];
   const sa = createSilentAudio({
     spawn: (cmd, args) => {
@@ -52,21 +51,30 @@ test('start: генерирует wav и запускает afplay с путём
       children.push({ cmd, args, c });
       return c;
     },
-    writeFileSync: (p, buf) => {
-      written.path = p;
-      written.buf = buf;
-    },
-    cachePath: '/tmp/silence.wav',
+    wavPath: '/repo/resources/silence.wav',
     setTimeoutFn: () => 0,
     clearTimeoutFn: () => {},
   });
   assert.strictEqual(sa.start(), true);
-  assert.strictEqual(written.path, '/tmp/silence.wav');
-  assert.ok(Buffer.isBuffer(written.buf));
   assert.strictEqual(children.length, 1);
   assert.strictEqual(children[0].cmd, 'afplay');
-  assert.deepStrictEqual(children[0].args, ['-q', '/tmp/silence.wav']);
+  assert.deepStrictEqual(children[0].args, ['-q', '/repo/resources/silence.wav']);
   assert.strictEqual(sa.isActive(), true);
+});
+
+test('без wavPath start возвращает false и afplay не запускается', () => {
+  const children = [];
+  const sa = createSilentAudio({
+    spawn: () => {
+      const c = fakeChild();
+      children.push(c);
+      return c;
+    },
+    setTimeoutFn: () => 0,
+    clearTimeoutFn: () => {},
+  });
+  assert.strictEqual(sa.start(), false);
+  assert.strictEqual(children.length, 0);
 });
 
 test('выход afplay → перепланирование, watchdog → повторный spawn', () => {
@@ -78,8 +86,7 @@ test('выход afplay → перепланирование, watchdog → по�
       children.push(c);
       return c;
     },
-    writeFileSync: () => {},
-    cachePath: '/x.wav',
+    wavPath: '/x.wav',
     setTimeoutFn: (fn) => {
       tickFn = fn;
       return 1;
@@ -91,7 +98,7 @@ test('выход afplay → перепланирование, watchdog → по�
   assert.strictEqual(sa.isActive(), true);
 
   children[0].emit('exit'); // afplay закончил играть
-  assert.strictEqual(sa.isActive(), false); // дочерний ушёл, ждём watchdog
+  assert.strictEqual(sa.isActive(), false);
   assert.strictEqual(typeof tickFn, 'function');
   tickFn();
   assert.strictEqual(children.length, 2); // перезапустился
@@ -106,8 +113,7 @@ test('stop: убивает активный afplay', () => {
       children.push(c);
       return c;
     },
-    writeFileSync: () => {},
-    cachePath: '/x.wav',
+    wavPath: '/x.wav',
     setTimeoutFn: () => 0,
     clearTimeoutFn: () => {},
   });
@@ -129,8 +135,7 @@ test('stop: отменяет запланированный перезапуск
       children.push(c);
       return c;
     },
-    writeFileSync: () => {},
-    cachePath: '/x.wav',
+    wavPath: '/x.wav',
     setTimeoutFn: (fn) => {
       tickFn = fn;
       return 1;
@@ -148,27 +153,21 @@ test('stop: отменяет запланированный перезапуск
   assert.strictEqual(children.length, 1, 'нет повторного spawn после stop');
 });
 
-test('если wav не записался — start возвращает false, afplay не запускается', () => {
+test('повторный start когда уже крутится — без второго spawn', () => {
   const children = [];
-  const logged = [];
   const sa = createSilentAudio({
     spawn: () => {
       const c = fakeChild();
       children.push(c);
       return c;
     },
-    writeFileSync: () => {
-      throw new Error('disk full');
-    },
-    cachePath: '/x.wav',
-    log: (m) => logged.push(m),
+    wavPath: '/x.wav',
     setTimeoutFn: () => 0,
     clearTimeoutFn: () => {},
   });
-  assert.strictEqual(sa.start(), false);
-  assert.strictEqual(children.length, 0);
-  assert.strictEqual(sa.isActive(), false);
-  assert.ok(logged.length >= 1);
+  sa.start();
+  sa.start(); // уже активен — не плодим процессы
+  assert.strictEqual(children.length, 1);
 });
 
 test('после stop можно снова start', () => {
@@ -179,8 +178,7 @@ test('после stop можно снова start', () => {
       children.push(c);
       return c;
     },
-    writeFileSync: () => {},
-    cachePath: '/x.wav',
+    wavPath: '/x.wav',
     setTimeoutFn: () => 0,
     clearTimeoutFn: () => {},
   });
