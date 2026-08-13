@@ -65,20 +65,35 @@ function createSilentAudio({
 	function spawnPlayer() {
 		if (stopping || !wavPath) return;
 		try {
-			child = spawn("afplay", ["-q", wavPath], { stdio: "ignore" });
+			// stderr ловим, чтобы увидеть, почему afplay падает на таргете
+			// (на dev-машине wav+afplay работают — значит причина окружающая).
+			child = spawn("afplay", ["-q", wavPath], {
+				stdio: ["ignore", "ignore", "pipe"],
+			});
 			lastSpawnAt = Date.now();
-			child.on("exit", () => {
+			let stderrBuf = "";
+			if (child.stderr) {
+				child.stderr.on("data", (d) => {
+					stderrBuf += d.toString();
+				});
+			}
+			child.on("exit", (code) => {
 				child = null;
 				if (stopping) return;
-				// Нормальный проигрыш ~seconds; мгновенный выход = ошибка → бэкофф,
-				// чтобы не закрутить tight-цикл респавна при стойкой проблеме.
+				// Нормальный проигрыш ~seconds; мгновенный выход или ненулевой code =
+				// ошибка → бэкофф, чтобы не закрутить tight-цикл респавна.
 				const ran = Date.now() - lastSpawnAt;
-				if (ran < 1000) {
+				if (ran < 1000 || code !== 0) {
 					if (!loggedFastFail) {
 						loggedFastFail = true;
 						log(
-							"silent-audio: afplay падает сразу — не найден/не читается wav: " +
-								wavPath,
+							"silent-audio: afplay упал (code=" +
+								code +
+								", ran=" +
+								ran +
+								"ms) wav=" +
+								wavPath +
+								(stderrBuf.trim() ? " stderr: " + stderrBuf.trim() : ""),
 						);
 					}
 					relaunchTimer = setTimeoutFn(spawnPlayer, 5000);
@@ -97,6 +112,7 @@ function createSilentAudio({
 		start() {
 			if (!wavPath) return false;
 			stopping = false;
+			loggedFastFail = false; // свежая попытка — логнуть ошибку заново, если будет
 			if (child) return true; // уже крутится
 			spawnPlayer();
 			return true;
@@ -118,6 +134,9 @@ function createSilentAudio({
 		},
 		isActive() {
 			return child != null;
+		},
+		isFailing() {
+			return loggedFastFail;
 		},
 	};
 }

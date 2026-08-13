@@ -508,7 +508,13 @@ function statusText() {
 		`Напоминания: ${s.remindMinutes ? `каждые ${s.remindMinutes} мин` : "выкл"}`,
 		agentStatusLine(),
 		`Keep-awake: ${describeKeepAwake()}`,
-		`Аудио-анти-idle: ${silentAudio && silentAudio.isActive() ? "крутится" : "выкл"}`,
+		`Аудио-анти-idle: ${
+			silentAudio && silentAudio.isActive()
+				? "крутится"
+				: silentAudio && silentAudio.isFailing()
+					? "afplay падает — см. лог SILENT-AUDIO"
+					: "выкл"
+		}`,
 		`Аптайм: ${formatDuration(Date.now() - startedAt)} · версия ${VERSION}`,
 	];
 	if (state.challenge) lines.push("⚠️ Требуется проверка (капча)");
