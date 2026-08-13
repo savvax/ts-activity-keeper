@@ -4,7 +4,9 @@
 // автозапуск и wiring хендлеров бота.
 
 const { app, powerSaveBlocker } = require("electron");
-const { execFile } = require("child_process");
+const { execFile, spawn } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
 const {
 	randomInt,
@@ -23,6 +25,7 @@ const { createReminder } = require("./reminder");
 const { createAutoStop } = require("./auto-stop");
 const { createTelegramBot } = require("./telegram-bot");
 const { createKeepAwake } = require("./keep-awake");
+const { createSilentAudio } = require("./silent-audio");
 const { ensureAutostart, describeAutostart } = require("./launch-agent");
 const { loadBuildSecrets } = require("./build-config-loader");
 const settingsStore = require("./settings");
@@ -67,6 +70,7 @@ let healthState = initialHealthState();
 let reminder = null;
 let telegramBot = null;
 let keepAwake = null;
+let silentAudio = null;
 const sessionClock = createSessionClock(() => Date.now());
 const autoStop = createAutoStop(() => Date.now());
 
@@ -504,6 +508,7 @@ function statusText() {
 		`Напоминания: ${s.remindMinutes ? `каждые ${s.remindMinutes} мин` : "выкл"}`,
 		agentStatusLine(),
 		`Keep-awake: ${describeKeepAwake()}`,
+		`Аудио-анти-idle: ${silentAudio && silentAudio.isActive() ? "крутится" : "выкл"}`,
 		`Аптайм: ${formatDuration(Date.now() - startedAt)} · версия ${VERSION}`,
 	];
 	if (state.challenge) lines.push("⚠️ Требуется проверка (капча)");
@@ -678,6 +683,7 @@ process.on("uncaughtException", (err) => {
 		exited = true;
 		try {
 			if (keepAwake) keepAwake.stop();
+			if (silentAudio) silentAudio.stop();
 		} catch (e) {
 			// best-effort — не даём снятию keep-awake задержать выход
 		}
@@ -794,6 +800,17 @@ app.whenReady().then(async () => {
 	});
 	keepAwake.start();
 
+	// Зацепка «exemption по аудио»: некоторые idle-logout-демоны не логаутят,
+	// пока играет звук. Крутим почти бесшумный afplay всегда (дешево, безвредно).
+	// На HID-idle-демонах не поможет, но тогда в деле keep-awake/nudge.
+	silentAudio = createSilentAudio({
+		spawn,
+		writeFileSync: fs.writeFileSync,
+		cachePath: path.join(app.getPath("userData"), "silence.wav"),
+		log: (msg) => console.error("[SILENT-AUDIO]", msg),
+	});
+	silentAudio.start();
+
 	// Периодически проверяем реальную работоспособность сброса HID idle: постинг
 	// CGEvent требует Accessibility, а его выдают вручную (обычно ПОСЛЕ первого
 	// запуска). Чтобы демон сам «ожил», как только доступ выдан, — перепроверяем
@@ -858,6 +875,7 @@ app.on("window-all-closed", (e) => {
 app.on("before-quit", (e) => {
 	if (telegramBot) telegramBot.stop();
 	if (keepAwake) keepAwake.stop();
+	if (silentAudio) silentAudio.stop();
 	if (isQuitting) return;
 	if (running) {
 		isQuitting = true;
