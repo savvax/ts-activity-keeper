@@ -842,7 +842,14 @@ app.whenReady().then(async () => {
 	silentAudio = createSilentAudio({
 		spawn,
 		wavPath: ensureSilenceWav(),
-		log: (msg) => console.error("[SILENT-AUDIO]", msg),
+		log: (msg) => {
+			console.error("[SILENT-AUDIO]", msg);
+			// На управляемом Маке лог не прочитать — шлём ошибку afplay в Telegram
+			// (loggedFastFail в модуле глушит повторы, так что это разово за серию).
+			telegramNotify(
+				"⚠️ Аудио-анти-idle: " + msg.replace(/^silent-audio:\s*/, ""),
+			);
+		},
 	});
 	if (settingsStore.loadSettings().audioKeepAlive) silentAudio.start();
 
