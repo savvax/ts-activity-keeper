@@ -58,10 +58,7 @@ test("start: запускает afplay с переданным wavPath", () => {
 	assert.strictEqual(sa.start(), true);
 	assert.strictEqual(children.length, 1);
 	assert.strictEqual(children[0].cmd, "afplay");
-	assert.deepStrictEqual(children[0].args, [
-		"-q",
-		"/repo/resources/silence.wav",
-	]);
+	assert.deepStrictEqual(children[0].args, ["/repo/resources/silence.wav"]);
 	assert.strictEqual(sa.isActive(), true);
 });
 

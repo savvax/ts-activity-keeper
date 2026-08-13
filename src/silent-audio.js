@@ -67,7 +67,9 @@ function createSilentAudio({
 		try {
 			// stderr ловим, чтобы увидеть, почему afplay падает на таргете
 			// (на dev-машине wav+afplay работают — значит причина окружающая).
-			child = spawn("afplay", ["-q", wavPath], {
+			// Без флагов: у afplay нет «quiet» — `-q` это --rQuality (требует аргумент),
+			// он «съел» бы имя файла, и afplay печатал бы usage, падая (code 1).
+			child = spawn("afplay", [wavPath], {
 				stdio: ["ignore", "ignore", "pipe"],
 			});
 			lastSpawnAt = Date.now();
